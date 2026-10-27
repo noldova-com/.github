@@ -1,0 +1,257 @@
+# @license
+# Copyright (c) Noldova.
+#
+# This source code is licensed under the license found in the
+# LICENSE file in the root directory of this source tree.
+
+name: Flake proof
+
+# The inputs' defaults, which the inputs below take by their anchors, since an input's default can't read env.
+env:
+  DEFAULT_RUNS: &default-runs '50'
+  DEFAULT_PARALLEL_JOBS_PER_TARGET: &default-parallel-jobs-per-target '2'
+  DEFAULT_TIMEOUT_MINUTES: &default-timeout-minutes '120'
+  DEFAULT_TARGETS: &default-targets linux-x64 windows-x64
+  npm_config_ignore_scripts: 'true'
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: The branch, tag or commit to test; empty tests the branch the run starts on
+        type: string
+        default: ''
+      filter:
+        description: The filters npm test takes, separated by spaces; empty runs the whole suite
+        type: string
+        default: ''
+      runs:
+        description: Runs in total per target, 1 to 200
+        type: string
+        default: *default-runs
+      jobs:
+        description: Parallel jobs per target, 1 to 4
+        type: string
+        default: *default-parallel-jobs-per-target
+      timeout-minutes:
+        description: The minutes each test job may take, 1 to 360
+        type: string
+        default: *default-timeout-minutes
+      targets:
+        description: The targets to run on, separated by spaces, from linux-x64, linux-arm64, windows-x64, windows-arm64, macos-x64 and macos-arm64
+        type: string
+        default: *default-targets
+      node-version:
+        description: Overrides the Node version versions.yml names, such as 24.21.0
+        type: string
+        default: ''
+      npm-version:
+        description: Overrides the npm version versions.yml names, such as 11.19.0
+        type: string
+        default: ''
+      install-registry-url:
+        description: Overrides the registry versions.yml names for the scope's packages, such as https://npm.pkg.github.com
+        type: string
+        default: ''
+      install-scope:
+        description: Overrides the scope versions.yml names for that registry, such as @noldova-com
+        type: string
+        default: ''
+      retention-days:
+        description: Overrides the days versions.yml keeps a failed run's logs, 1 to 90
+        type: string
+        default: ''
+      runs-on-linux-x64:
+        description: Overrides the Linux x64 runner, as the JSON runs-on takes
+        type: string
+        default: ''
+      runs-on-linux-arm64:
+        description: Overrides the Linux arm64 runner, as the JSON runs-on takes
+        type: string
+        default: ''
+      runs-on-windows-x64:
+        description: Overrides the Windows x64 runner, as the JSON runs-on takes
+        type: string
+        default: ''
+      runs-on-windows-arm64:
+        description: Overrides the Windows arm64 runner, as the JSON runs-on takes
+        type: string
+        default: ''
+      runs-on-macos-x64:
+        description: Overrides the macOS x64 runner, as the JSON runs-on takes
+        type: string
+        default: ''
+      runs-on-macos-arm64:
+        description: Overrides the macOS arm64 runner, as the JSON runs-on takes
+        type: string
+        default: ''
+
+permissions: {}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  versions:
+    name: Versions
+    uses: $/.github/workflows/versions.yml
+    permissions: {}
+    with:
+      targets: ${{ inputs.targets }}
+      node-version: ${{ inputs.node-version }}
+      npm-version: ${{ inputs.npm-version }}
+      install-registry-url: ${{ inputs.install-registry-url }}
+      install-scope: ${{ inputs.install-scope }}
+      retention-days: ${{ inputs.retention-days }}
+      runs-on-linux-x64: ${{ inputs.runs-on-linux-x64 }}
+      runs-on-linux-arm64: ${{ inputs.runs-on-linux-arm64 }}
+      runs-on-windows-x64: ${{ inputs.runs-on-windows-x64 }}
+      runs-on-windows-arm64: ${{ inputs.runs-on-windows-arm64 }}
+      runs-on-macos-x64: ${{ inputs.runs-on-macos-x64 }}
+      runs-on-macos-arm64: ${{ inputs.runs-on-macos-arm64 }}
+
+  plan:
+    name: Plan
+    needs: versions
+    runs-on: ${{ fromJSON(needs.versions.outputs.runs-on-linux-x64) }}
+    timeout-minutes: 5
+    permissions: {}
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+    steps:
+      - name: Plan the jobs
+        id: plan
+        env:
+          RUNS: ${{ inputs.runs }}
+          JOBS: ${{ inputs.jobs }}
+          TIMEOUT: ${{ inputs.timeout-minutes }}
+          TARGETS: ${{ inputs.targets }}
+        run: |
+          set -euo pipefail
+          if ! [[ "$RUNS" =~ ^[0-9]+$ ]] || [ "$RUNS" -lt 1 ] || [ "$RUNS" -gt 200 ]; then
+            echo "::error::runs must be a whole number from 1 to 200."
+            exit 1
+          fi
+          if ! [[ "$JOBS" =~ ^[0-9]+$ ]] || [ "$JOBS" -lt 1 ] || [ "$JOBS" -gt 4 ]; then
+            echo "::error::jobs must be a whole number from 1 to 4."
+            exit 1
+          fi
+          if ! [[ "$TIMEOUT" =~ ^[0-9]+$ ]] || [ "$TIMEOUT" -lt 1 ] || [ "$TIMEOUT" -gt 360 ]; then
+            echo "::error::timeout-minutes must be a whole number from 1 to 360."
+            exit 1
+          fi
+          read -ra targets <<< "$TARGETS"
+          if [ "${#targets[@]}" -eq 0 ]; then
+            echo "::error::targets must name at least one target."
+            exit 1
+          fi
+          jobs=$(( JOBS < RUNS ? JOBS : RUNS ))
+          entries=()
+          declare -A planned
+          for target in "${targets[@]}"; do
+            if [ -n "${planned[$target]:-}" ]; then
+              continue
+            fi
+            planned[$target]=1
+            for (( job = 0; job < jobs; job++ )); do
+              entries+=("{\"target\":\"$target\",\"job\":$(( job + 1 )),\"runs\":$(( RUNS / jobs + (job < RUNS % jobs ? 1 : 0) ))}")
+            done
+          done
+          matrix="[$(IFS=,; echo "${entries[*]}")]"
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+          echo "$matrix"
+
+  test:
+    name: ${{ matrix.target }} job ${{ matrix.job }}
+    needs: [versions, plan]
+    runs-on: ${{ fromJSON(needs.versions.outputs[format('runs-on-{0}', matrix.target)]) }}
+    timeout-minutes: ${{ fromJSON(inputs.timeout-minutes) }}
+    permissions:
+      contents: read
+      packages: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    steps:
+      - name: Check out the tested revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: ${{ needs.versions.outputs.node-version }}
+          package-manager-cache: false
+          registry-url: ${{ needs.versions.outputs.install-registry-url }}
+          scope: ${{ needs.versions.outputs.install-scope }}
+
+      - name: Verify the toolchain
+        env:
+          NODE_VERSION: ${{ needs.versions.outputs.node-version }}
+          NPM_VERSION: ${{ needs.versions.outputs.npm-version }}
+        run: |
+          node --version
+          npm --version
+          test "$(node --version)" = "v$NODE_VERSION"
+          if [ -n "$NPM_VERSION" ]; then
+            test "$(npm --version)" = "$NPM_VERSION"
+          fi
+
+      - name: Install the dependencies
+        env:
+          NODE_AUTH_TOKEN: ${{ needs.versions.outputs.install-registry-url == 'https://npm.pkg.github.com' && github.token || '' }}
+        run: |
+          npm ci --no-audit --no-fund
+          for script in preinstall install postinstall prepare; do
+            npm run "$script" --if-present
+          done
+
+      - name: Build the packages
+        env:
+          NODE_AUTH_TOKEN: ${{ needs.versions.outputs.install-registry-url == 'https://npm.pkg.github.com' && github.token || '' }}
+        run: npm run build
+
+      - name: Run the tests
+        env:
+          FILTER: ${{ inputs.filter }}
+          RUNS: ${{ matrix.runs }}
+          TARGET: ${{ matrix.target }}
+          JOB: ${{ matrix.job }}
+        run: |
+          set -uo pipefail
+          read -r -a filters <<< "$FILTER"
+          mkdir -p _build/flake-proof
+          passed=0
+          failed=0
+          for run in $(seq 1 "$RUNS"); do
+            log="_build/flake-proof/run-$run.log"
+            if npm run test -- ${filters[@]+"${filters[@]}"} > "$log" 2>&1; then
+              passed=$(( passed + 1 ))
+              rm "$log"
+              echo "Run $run passed."
+            else
+              failed=$(( failed + 1 ))
+              echo "::error::Run $run failed; its log is kept in the job's artifact."
+              tail -n 60 "$log"
+            fi
+          done
+          {
+            echo '| Target | Job | Runs | Passed | Failed |'
+            echo '|---|---|---|---|---|'
+            echo "| $TARGET | $JOB | $RUNS | $passed | $failed |"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "$passed of $RUNS runs passed."
+          test "$failed" -eq 0
+
+      - name: Keep the failed runs' logs
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: flake-proof-${{ matrix.target }}-${{ matrix.job }}
+          path: _build/flake-proof/
+          retention-days: ${{ needs.versions.outputs.retention-days }}
+          if-no-files-found: ignore

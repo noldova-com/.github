@@ -1,0 +1,487 @@
+# @license
+# Copyright (c) Noldova.
+#
+# This source code is licensed under the license found in the
+# LICENSE file in the root directory of this source tree.
+
+name: Release npm packages
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: The version to release, major.minor.patch, which the commit holds
+        required: true
+        type: string
+      commit:
+        description: The full hash of the commit on main to build and release
+        required: true
+        type: string
+      environment:
+        description: The calling repository's environment for this registry, which holds its secret and its approval rule
+        required: true
+        type: string
+      keep-versions:
+        description: How many of the newest versions to keep after publishing; 0 keeps every version
+        required: false
+        type: number
+        default: 0
+      publish-registry-url:
+        description: Overrides the registry versions.yml names to publish to, such as https://registry.npmjs.org
+        type: string
+        default: ''
+      publish-scope:
+        description: Overrides the packages' scope versions.yml names on that registry, such as @noldova
+        type: string
+        default: ''
+      publish-access:
+        description: Overrides the access versions.yml names, public or restricted
+        type: string
+        default: ''
+      node-version:
+        description: Overrides the Node version versions.yml names, such as 24.21.0
+        type: string
+        default: ''
+      npm-version:
+        description: Overrides the npm version versions.yml names, such as 11.19.0
+        type: string
+        default: ''
+      install-registry-url:
+        description: Overrides the registry versions.yml names for installing the scope's packages, such as https://npm.pkg.github.com
+        type: string
+        default: ''
+      install-scope:
+        description: Overrides the scope versions.yml names for that registry, such as @noldova-com
+        type: string
+        default: ''
+      retention-days:
+        description: Overrides the days versions.yml keeps the addons and archives, 1 to 90
+        type: string
+        default: ''
+      runs-on-linux-x64:
+        description: Overrides the Linux x64 runner, as the JSON runs-on takes
+        type: string
+        default: ''
+      runs-on-linux-arm64:
+        description: Overrides the Linux arm64 runner, as the JSON runs-on takes
+        type: string
+        default: ''
+      runs-on-windows-x64:
+        description: Overrides the Windows x64 runner, as the JSON runs-on takes
+        type: string
+        default: ''
+      runs-on-windows-arm64:
+        description: Overrides the Windows arm64 runner, as the JSON runs-on takes
+        type: string
+        default: ''
+      runs-on-macos-x64:
+        description: Overrides the macOS x64 runner, as the JSON runs-on takes
+        type: string
+        default: ''
+      runs-on-macos-arm64:
+        description: Overrides the macOS arm64 runner, as the JSON runs-on takes
+        type: string
+        default: ''
+    secrets:
+      registry-token:
+        description: The registry's publishing token; without it, GitHub's registry takes the run's own token, and npm's registry takes trusted publishing
+        required: false
+
+permissions: {}
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  npm_config_ignore_scripts: 'true'
+  RELEASE_VERSION: ${{ inputs.version }}
+  RELEASE_COMMIT: ${{ inputs.commit }}
+  RELEASE_KEEP_VERSIONS: ${{ inputs.keep-versions }}
+
+jobs:
+  versions:
+    name: Versions
+    uses: $/.github/workflows/versions.yml
+    permissions: {}
+    with:
+      targets: linux-x64
+      node-version: ${{ inputs.node-version }}
+      npm-version: ${{ inputs.npm-version }}
+      install-registry-url: ${{ inputs.install-registry-url }}
+      install-scope: ${{ inputs.install-scope }}
+      publish-registry-url: ${{ inputs.publish-registry-url }}
+      publish-scope: ${{ inputs.publish-scope }}
+      publish-access: ${{ inputs.publish-access }}
+      retention-days: ${{ inputs.retention-days }}
+      runs-on-linux-x64: ${{ inputs.runs-on-linux-x64 }}
+      runs-on-linux-arm64: ${{ inputs.runs-on-linux-arm64 }}
+      runs-on-windows-x64: ${{ inputs.runs-on-windows-x64 }}
+      runs-on-windows-arm64: ${{ inputs.runs-on-windows-arm64 }}
+      runs-on-macos-x64: ${{ inputs.runs-on-macos-x64 }}
+      runs-on-macos-arm64: ${{ inputs.runs-on-macos-arm64 }}
+
+  plan:
+    name: Plan the native addons
+    needs: versions
+    runs-on: ${{ fromJSON(needs.versions.outputs.runs-on-linux-x64) }}
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      systems: ${{ steps.plan.outputs.systems }}
+    steps:
+      - name: Check out main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check out the commit, if it is on main
+        run: |
+          if ! git merge-base --is-ancestor "$RELEASE_COMMIT" HEAD; then
+            echo "::error::The commit $RELEASE_COMMIT is not on main."
+            exit 1
+          fi
+          git checkout --quiet --detach "$RELEASE_COMMIT"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: ${{ needs.versions.outputs.node-version }}
+          package-manager-cache: false
+
+      - name: List the systems whose packages declare addons
+        id: plan
+        env:
+          RELEASE_PUBLIC: ${{ !github.event.repository.private }}
+        run: |
+          node --input-type=module <<'SCRIPT'
+          import { execFileSync } from "node:child_process";
+          import { appendFileSync, readFileSync } from "node:fs";
+
+          const manifests = execFileSync("git", ["ls-files", "-z", "--", ":(glob)src/**/package.json", ":(exclude,glob)src/**/tests/**"], { encoding: "utf8" }).split("\0").filter(t => t !== "");
+          const declared = new Set();
+          let valid = true;
+          for (const manifest of manifests) {
+            const noldova = JSON.parse(readFileSync(manifest, "utf8")).noldova ?? {};
+            for (const key of ["posixAddons", "windowsAddons"]) {
+              const addons = noldova[key];
+              if (addons === undefined)
+                continue;
+              if (!Array.isArray(addons) || !addons.every(t => typeof t === "string" && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(t))) {
+                console.log(`::error::${manifest}: noldova.${key} must be a list of kebab-case addon names.`);
+                valid = false;
+              }
+              else if (addons.length > 0)
+                declared.add(key);
+            }
+          }
+          if (!valid)
+            process.exit(1);
+          if (declared.size > 0 && process.env.RELEASE_PUBLIC === "true") {
+            console.log("::error::A public repository can't build native addons yet: they build only on the organization's own runners.");
+            process.exit(1);
+          }
+          const systems = [...(declared.has("posixAddons") ? ["linux", "macos"] : []), ...(declared.has("windowsAddons") ? ["windows"] : [])];
+          const output = JSON.stringify(systems.map(system => ({ system })));
+          appendFileSync(process.env.GITHUB_OUTPUT, `systems=${output}\n`);
+          console.log(`The systems that build addons: ${output}`);
+          SCRIPT
+
+  addons:
+    name: Build the native addons (${{ matrix.system }})
+    needs: [versions, plan]
+    if: needs.plan.outputs.systems != '[]'
+    runs-on: ${{ fromJSON(needs.versions.outputs[format('runs-on-{0}-x64', matrix.system)]) }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: true
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.systems) }}
+    steps:
+      - name: Check out the commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.commit }}
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: ${{ needs.versions.outputs.node-version }}
+          package-manager-cache: false
+
+      - name: Verify the toolchain
+        env:
+          NODE_VERSION: ${{ needs.versions.outputs.node-version }}
+          NPM_VERSION: ${{ needs.versions.outputs.npm-version }}
+        run: |
+          test "$(node --version)" = "v$NODE_VERSION"
+          if [ -n "$NPM_VERSION" ]; then
+            test "$(npm --version)" = "$NPM_VERSION"
+          fi
+
+      - name: Build every declared addon for x64 and ARM64
+        run: |
+          set -euo pipefail
+          platform=$(node -p process.platform)
+          if [ "$platform" = win32 ]; then key=windowsAddons; else key=posixAddons; fi
+          node_gyp="$(npm root -g)/npm/node_modules/node-gyp/bin/node-gyp.js"
+          headers="$RUNNER_TEMP/node-gyp"
+          out="$RUNNER_TEMP/addons"
+          mkdir -p "$out"
+          echo "The addons built on $platform." > "$out/built-on-$platform.txt"
+          for manifest in $(git ls-files -- ':(glob)src/**/package.json' ':(exclude,glob)src/**/tests/**'); do
+            folder=$(dirname "$manifest")
+            addons=$(node -e 'const m = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")); const a = m.noldova?.[process.argv[2]] ?? []; if (!Array.isArray(a) || !a.every(t => /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(t))) { console.error(`${process.argv[1]}: noldova.${process.argv[2]} must be a list of kebab-case addon names.`); process.exit(1); } console.log(a.join(" "));' "$manifest" "$key")
+            for addon in $addons; do
+              for arch in x64 arm64; do
+                work="$RUNNER_TEMP/addon-builds/$folder/$addon/$arch"
+                target=${addon//-/_}
+                rm -rf "$work"
+                mkdir -p "$work"
+                cp "$folder/src/native/$addon.c" "$work/"
+                printf '{"targets":[{"target_name":"%s","sources":["%s.c"],"defines":["NAPI_VERSION=8"]}]}\n' "$target" "$addon" > "$work/binding.gyp"
+                (
+                  cd "$work"
+                  if [ "$platform" = linux ]; then
+                    if [ "$arch" = arm64 ]; then
+                      cross="--target=aarch64-linux-gnu --sysroot=/opt/noldova-sysroots/debian_bullseye_arm64-sysroot"
+                    else
+                      cross="--target=x86_64-linux-gnu --sysroot=/opt/noldova-sysroots/debian_bullseye_amd64-sysroot"
+                    fi
+                    export CC="clang-21 $cross"
+                    export CXX="clang++-21 $cross"
+                    export LINK="clang++-21 $cross -fuse-ld=lld"
+                    export AR=llvm-ar-21
+                  fi
+                  node "$node_gyp" rebuild --arch="$arch" --loglevel=error --devdir="$headers"
+                )
+                mkdir -p "$out/$folder/$platform-$arch"
+                cp "$work/build/Release/$target.node" "$out/$folder/$platform-$arch/$addon.node"
+                echo "Built $folder's $addon for $platform-$arch."
+              done
+            done
+          done
+
+      - name: Keep the addons for the build
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: addons-${{ matrix.system }}
+          path: ${{ runner.temp }}/addons/
+          if-no-files-found: error
+          retention-days: ${{ needs.versions.outputs.retention-days }}
+
+  build:
+    name: Build and check the archives
+    needs: [versions, plan, addons]
+    if: ${{ !cancelled() && needs.plan.result == 'success' && (needs.addons.result == 'success' || needs.addons.result == 'skipped') }}
+    runs-on: ${{ fromJSON(needs.versions.outputs.runs-on-linux-x64) }}
+    timeout-minutes: 20
+    env: &release-registry
+      RELEASE_REGISTRY_URL: ${{ needs.versions.outputs.publish-registry-url }}
+      RELEASE_SCOPE: ${{ needs.versions.outputs.publish-scope }}
+      RELEASE_ACCESS: ${{ needs.versions.outputs.publish-access }}
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Check out main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node.js for the organization's packages
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: ${{ needs.versions.outputs.node-version }}
+          package-manager-cache: false
+          registry-url: ${{ needs.versions.outputs.install-registry-url }}
+          scope: ${{ needs.versions.outputs.install-scope }}
+
+      - name: Verify the toolchain
+        env:
+          NODE_VERSION: ${{ needs.versions.outputs.node-version }}
+          NPM_VERSION: ${{ needs.versions.outputs.npm-version }}
+        run: |
+          test "$(node --version)" = "v$NODE_VERSION"
+          if [ -n "$NPM_VERSION" ]; then
+            test "$(npm --version)" = "$NPM_VERSION"
+          fi
+
+      - name: Check that the commit is on main and has the version
+        run: npm run release -- source "$RELEASE_VERSION" "$RELEASE_COMMIT"
+
+      - name: Check out the commit
+        run: git checkout --quiet --detach "$RELEASE_COMMIT"
+
+      - name: Install the dependencies
+        env:
+          NODE_AUTH_TOKEN: ${{ needs.versions.outputs.install-registry-url == 'https://npm.pkg.github.com' && github.token || '' }}
+        run: |
+          npm ci --no-audit --no-fund
+          for script in preinstall install postinstall prepare; do
+            npm run "$script" --if-present
+          done
+
+      - name: Take the built addons
+        if: needs.addons.result == 'success'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: addons-*
+          path: ${{ runner.temp }}/addons
+          merge-multiple: true
+
+      - name: Build the packages
+        env:
+          NODE_AUTH_TOKEN: ${{ needs.versions.outputs.install-registry-url == 'https://npm.pkg.github.com' && github.token || '' }}
+          RELEASE_ADDONS: ${{ runner.temp }}/addons
+        run: |
+          mkdir -p "$RELEASE_ADDONS"
+          npm run build
+
+      - name: Check that every addon has every target's build
+        run: |
+          set -euo pipefail
+          missing=0
+          for manifest in $(git ls-files -- ':(glob)src/**/package.json' ':(exclude,glob)src/**/tests/**'); do
+            name=$(node -p 'require(require("node:path").resolve(process.argv[1])).name' "$manifest")
+            archive="_packages/$(echo "${name#@}" | tr / -)-$RELEASE_VERSION.tgz"
+            listing=$(tar -tzf "$archive" 2> /dev/null || true)
+            for pair in "windowsAddons win32-x64 win32-arm64" "posixAddons linux-x64 linux-arm64 darwin-x64 darwin-arm64"; do
+              read -r key targets <<< "$pair"
+              for addon in $(node -p 'const m = require(require("node:path").resolve(process.argv[1])); (m.noldova?.[process.argv[2]] ?? []).join(" ")' "$manifest" "$key"); do
+                for target in $targets; do
+                  if ! grep -qxF "package/native/$target/$addon.node" <<< "$listing"; then
+                    echo "::error::$name's archive has no build of its addon $addon for $target."
+                    missing=1
+                  fi
+                done
+              done
+            done
+          done
+          test "$missing" -eq 0
+
+      - name: Check the archives
+        env:
+          NODE_AUTH_TOKEN: ${{ needs.versions.outputs.install-registry-url == 'https://npm.pkg.github.com' && github.token || '' }}
+        run: npm run release -- check _packages "$RELEASE_VERSION" "$RELEASE_COMMIT"
+
+      - name: Keep the archives for releasing
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: archives
+          path: _packages/*.tgz
+          if-no-files-found: error
+          retention-days: ${{ needs.versions.outputs.retention-days }}
+
+  publish:
+    name: Publish to the registry
+    needs: [versions, build]
+    if: ${{ !cancelled() && needs.build.result == 'success' }}
+    runs-on: ${{ fromJSON(needs.versions.outputs.runs-on-linux-x64) }}
+    timeout-minutes: 20
+    env: *release-registry
+    environment: ${{ inputs.environment }}
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    steps:
+      - name: Check out the commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.commit }}
+          persist-credentials: false
+
+      - name: Set up Node.js for the registry
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: ${{ needs.versions.outputs.node-version }}
+          package-manager-cache: false
+          registry-url: ${{ needs.versions.outputs.publish-registry-url }}
+          scope: ${{ needs.versions.outputs.publish-scope }}
+
+      - name: Verify the toolchain
+        env:
+          NODE_VERSION: ${{ needs.versions.outputs.node-version }}
+          NPM_VERSION: ${{ needs.versions.outputs.npm-version }}
+        run: |
+          test "$(node --version)" = "v$NODE_VERSION"
+          if [ -n "$NPM_VERSION" ]; then
+            test "$(npm --version)" = "$NPM_VERSION"
+          fi
+
+      - name: Take the checked archives
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: archives
+          path: _packages
+
+      - name: Publish the packages
+        env:
+          npm_config_provenance: ${{ !github.event.repository.private && needs.versions.outputs.publish-registry-url == 'https://registry.npmjs.org' }}
+          NODE_AUTH_TOKEN: ${{ secrets.registry-token || needs.versions.outputs.publish-registry-url == 'https://npm.pkg.github.com' && github.token || '' }}
+        run: npm run release -- publish _packages "$RELEASE_VERSION" "$RELEASE_COMMIT"
+
+  prune:
+    name: Keep the newest versions
+    needs: [versions, publish]
+    if: ${{ !cancelled() && needs.publish.result == 'success' && inputs.keep-versions > 0 && needs.versions.outputs.publish-registry-url == 'https://npm.pkg.github.com' }}
+    runs-on: ${{ fromJSON(needs.versions.outputs.runs-on-linux-x64) }}
+    timeout-minutes: 10
+    env: *release-registry
+    environment: ${{ inputs.environment }}
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Check out the commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.commit }}
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: ${{ needs.versions.outputs.node-version }}
+          package-manager-cache: false
+
+      - name: Delete the older versions
+        env:
+          RELEASE_REGISTRY_TOKEN: ${{ secrets.registry-token || github.token }}
+        run: npm run release -- prune "$RELEASE_VERSION"
+
+  tag:
+    name: Tag the version
+    needs: [versions, publish]
+    if: ${{ !cancelled() && needs.publish.result == 'success' }}
+    runs-on: ${{ fromJSON(needs.versions.outputs.runs-on-linux-x64) }}
+    timeout-minutes: 10
+    env: *release-registry
+    permissions:
+      contents: write
+    steps:
+      - name: Check out the commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.commit }}
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: ${{ needs.versions.outputs.node-version }}
+          package-manager-cache: false
+
+      - name: Tag the commit with the version
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: npm run release -- tag "$RELEASE_VERSION" "$RELEASE_COMMIT"

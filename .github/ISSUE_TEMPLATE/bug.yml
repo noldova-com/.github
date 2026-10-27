@@ -1,0 +1,53 @@
+# @license
+# Copyright (c) Noldova.
+#
+# This source code is licensed under the license found in the
+# LICENSE file in the root directory of this source tree.
+
+name: Bug report
+description: Something doesn't work as it should.
+type: Bug
+body:
+  - type: markdown
+    attributes:
+      value: >-
+        To report a security problem, follow the [security policy](https://github.com/noldova-com/.github/blob/main/SECURITY.md) instead.
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened?
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: The smallest steps that show the problem, even if it doesn't happen every time.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: The version you use, of the app or the package.
+  - type: input
+    id: earlier-version
+    attributes:
+      label: Did it work in an earlier version?
+      description: The last version where it worked, if you know one.
+  - type: input
+    id: platform
+    attributes:
+      label: Platform
+      description: The operating system, its version and the CPU, for example Windows 11 (x64).
+  - type: textarea
+    id: details
+    attributes:
+      label: Extra details (optional)
+      description: Screenshots or logs, if they help. Remove private information, such as names, addresses, credentials and file paths, first.

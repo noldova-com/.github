@@ -1,0 +1,279 @@
+# @license
+# Copyright (c) Noldova.
+#
+# This source code is licensed under the license found in the
+# LICENSE file in the root directory of this source tree.
+
+name: Versions
+
+on:
+  workflow_call:
+    inputs:
+      targets:
+        description: The targets the calling workflow runs on, separated by spaces, such as 'linux-x64 windows-x64'; each must have a runner
+        type: string
+        default: ''
+      node-version:
+        description: The Node version, such as 24.21.0; empty takes the default below
+        type: string
+        default: ''
+      npm-version:
+        description: The npm version that comes with that Node, such as 11.19.0; empty takes the default below, or checks none when node-version is given
+        type: string
+        default: ''
+      install-registry-url:
+        description: The registry the install reads the scope's packages from, such as https://npm.pkg.github.com; empty takes the default below
+        type: string
+        default: ''
+      install-scope:
+        description: The scope whose packages come from that registry, such as @noldova-com; empty takes the default below
+        type: string
+        default: ''
+      publish-registry-url:
+        description: The registry a release publishes to, such as https://registry.npmjs.org; empty takes the default below
+        type: string
+        default: ''
+      publish-scope:
+        description: The released packages' scope on that registry, such as @noldova; empty takes the default below
+        type: string
+        default: ''
+      publish-access:
+        description: public or restricted; empty takes the default below
+        type: string
+        default: ''
+      retention-days:
+        description: The days a run's artifacts are kept, 1 to 90; empty takes the default below
+        type: string
+        default: ''
+      runs-on-linux-x64:
+        description: The Linux x64 runner, as the JSON runs-on takes, such as '"ubuntu-24.04"'; empty takes the default below
+        type: string
+        default: ''
+      runs-on-linux-arm64:
+        description: The Linux arm64 runner, as the JSON runs-on takes; empty takes the default below
+        type: string
+        default: ''
+      runs-on-windows-x64:
+        description: The Windows x64 runner, as the JSON runs-on takes; empty takes the default below
+        type: string
+        default: ''
+      runs-on-windows-arm64:
+        description: The Windows arm64 runner, as the JSON runs-on takes; empty takes the default below
+        type: string
+        default: ''
+      runs-on-macos-x64:
+        description: The macOS x64 runner, as the JSON runs-on takes; empty takes the default below
+        type: string
+        default: ''
+      runs-on-macos-arm64:
+        description: The macOS arm64 runner, as the JSON runs-on takes; empty takes the default below
+        type: string
+        default: ''
+    outputs:
+      node-version:
+        description: The Node version every job sets up
+        value: ${{ jobs.versions.outputs.node-version }}
+      npm-version:
+        description: The npm version every job checks; empty when none is checked
+        value: ${{ jobs.versions.outputs.npm-version }}
+      install-registry-url:
+        description: The registry the install reads the scope's packages from; empty when every package comes from npm's registry
+        value: ${{ jobs.versions.outputs.install-registry-url }}
+      install-scope:
+        description: The scope whose packages come from that registry; empty with it
+        value: ${{ jobs.versions.outputs.install-scope }}
+      publish-registry-url:
+        description: The registry a release publishes to
+        value: ${{ jobs.versions.outputs.publish-registry-url }}
+      publish-scope:
+        description: The released packages' scope on that registry
+        value: ${{ jobs.versions.outputs.publish-scope }}
+      publish-access:
+        description: public or restricted
+        value: ${{ jobs.versions.outputs.publish-access }}
+      retention-days:
+        description: The days a run's artifacts are kept
+        value: ${{ jobs.versions.outputs.retention-days }}
+      runs-on-linux-x64:
+        description: The Linux x64 runner, as the JSON runs-on takes; empty when there is none
+        value: ${{ jobs.versions.outputs.runs-on-linux-x64 }}
+      runs-on-linux-arm64:
+        description: The Linux arm64 runner, as the JSON runs-on takes; empty when there is none
+        value: ${{ jobs.versions.outputs.runs-on-linux-arm64 }}
+      runs-on-windows-x64:
+        description: The Windows x64 runner, as the JSON runs-on takes; empty when there is none
+        value: ${{ jobs.versions.outputs.runs-on-windows-x64 }}
+      runs-on-windows-arm64:
+        description: The Windows arm64 runner, as the JSON runs-on takes; empty when there is none
+        value: ${{ jobs.versions.outputs.runs-on-windows-arm64 }}
+      runs-on-macos-x64:
+        description: The macOS x64 runner, as the JSON runs-on takes; empty when there is none
+        value: ${{ jobs.versions.outputs.runs-on-macos-x64 }}
+      runs-on-macos-arm64:
+        description: The macOS arm64 runner, as the JSON runs-on takes; empty when there is none
+        value: ${{ jobs.versions.outputs.runs-on-macos-arm64 }}
+
+permissions: {}
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  NODE_VERSION: '24.21.0'
+  NPM_VERSION: '11.19.0'
+  PRIVATE_REGISTRY_URL: https://npm.pkg.github.com
+  PRIVATE_SCOPE: '@noldova-com'
+  PUBLIC_REGISTRY_URL: https://registry.npmjs.org
+  PUBLIC_SCOPE: '@noldova'
+  PRIVATE_ACCESS: restricted
+  PUBLIC_ACCESS: public
+  PRIVATE_RETENTION_DAYS: '1'
+  PUBLIC_RETENTION_DAYS: '7'
+  HOSTED_LINUX_X64: ubuntu-24.04
+  HOSTED_LINUX_ARM64: ubuntu-24.04-arm
+  HOSTED_WINDOWS_X64: windows-2025
+  HOSTED_WINDOWS_ARM64: windows-11-arm
+  HOSTED_MACOS_X64: macos-15-intel
+  HOSTED_MACOS_ARM64: macos-15
+
+jobs:
+  versions:
+    name: Versions
+    runs-on: ${{ fromJSON(github.event.repository.private && vars.RUNNER_TYPE != 'GITHUB' && vars.RUNS_ON_SELF_HOSTED_LINUX || '"ubuntu-24.04"') }}
+    timeout-minutes: 5
+    permissions: {}
+    outputs:
+      node-version: ${{ steps.versions.outputs.node-version }}
+      npm-version: ${{ steps.versions.outputs.npm-version }}
+      install-registry-url: ${{ steps.versions.outputs.install-registry-url }}
+      install-scope: ${{ steps.versions.outputs.install-scope }}
+      publish-registry-url: ${{ steps.versions.outputs.publish-registry-url }}
+      publish-scope: ${{ steps.versions.outputs.publish-scope }}
+      publish-access: ${{ steps.versions.outputs.publish-access }}
+      retention-days: ${{ steps.versions.outputs.retention-days }}
+      runs-on-linux-x64: ${{ steps.versions.outputs.runs-on-linux-x64 }}
+      runs-on-linux-arm64: ${{ steps.versions.outputs.runs-on-linux-arm64 }}
+      runs-on-windows-x64: ${{ steps.versions.outputs.runs-on-windows-x64 }}
+      runs-on-windows-arm64: ${{ steps.versions.outputs.runs-on-windows-arm64 }}
+      runs-on-macos-x64: ${{ steps.versions.outputs.runs-on-macos-x64 }}
+      runs-on-macos-arm64: ${{ steps.versions.outputs.runs-on-macos-arm64 }}
+    steps:
+      - name: Choose the versions
+        id: versions
+        env:
+          IS_PRIVATE: ${{ github.event.repository.private }}
+          RUNNER_TYPE: ${{ vars.RUNNER_TYPE }}
+          TARGETS: ${{ inputs.targets }}
+          NODE: ${{ inputs.node-version || env.NODE_VERSION }}
+          NPM: ${{ inputs.npm-version || (inputs.node-version == '' && env.NPM_VERSION || '') }}
+          REGISTRY_INPUT: ${{ inputs.install-registry-url }}
+          SCOPE_INPUT: ${{ inputs.install-scope }}
+          PUBLISH_REGISTRY: ${{ inputs.publish-registry-url || (github.event.repository.private && env.PRIVATE_REGISTRY_URL || env.PUBLIC_REGISTRY_URL) }}
+          PUBLISH_SCOPE: ${{ inputs.publish-scope || (github.event.repository.private && env.PRIVATE_SCOPE || env.PUBLIC_SCOPE) }}
+          PUBLISH_ACCESS: ${{ inputs.publish-access || (github.event.repository.private && env.PRIVATE_ACCESS || env.PUBLIC_ACCESS) }}
+          RETENTION: ${{ inputs.retention-days || (github.event.repository.private && env.PRIVATE_RETENTION_DAYS || env.PUBLIC_RETENTION_DAYS) }}
+          OVERRIDE_LINUX_X64: ${{ inputs.runs-on-linux-x64 }}
+          OVERRIDE_LINUX_ARM64: ${{ inputs.runs-on-linux-arm64 }}
+          OVERRIDE_WINDOWS_X64: ${{ inputs.runs-on-windows-x64 }}
+          OVERRIDE_WINDOWS_ARM64: ${{ inputs.runs-on-windows-arm64 }}
+          OVERRIDE_MACOS_X64: ${{ inputs.runs-on-macos-x64 }}
+          OVERRIDE_MACOS_ARM64: ${{ inputs.runs-on-macos-arm64 }}
+          SELF_HOSTED_LINUX_X64: ${{ vars.RUNS_ON_SELF_HOSTED_LINUX }}
+          SELF_HOSTED_LINUX_ARM64: ${{ vars.RUNS_ON_SELF_HOSTED_LINUX_ARM64 }}
+          SELF_HOSTED_WINDOWS_X64: ${{ vars.RUNS_ON_SELF_HOSTED_WINDOWS }}
+          SELF_HOSTED_WINDOWS_ARM64: ${{ vars.RUNS_ON_SELF_HOSTED_WINDOWS_ARM64 }}
+          SELF_HOSTED_MACOS_X64: ${{ vars.RUNS_ON_SELF_HOSTED_MACOS }}
+          SELF_HOSTED_MACOS_ARM64: ${{ vars.RUNS_ON_SELF_HOSTED_MACOS_ARM64 }}
+        run: |
+          set -euo pipefail
+          if ! [[ "$NODE" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::The Node version \"$NODE\" is not an exact version, such as 24.21.0."
+            exit 1
+          fi
+          if [ -n "$NPM" ] && ! [[ "$NPM" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::The npm version \"$NPM\" is not an exact version, such as 11.19.0."
+            exit 1
+          fi
+          registry="$REGISTRY_INPUT"
+          scope="$SCOPE_INPUT"
+          if [ -z "$registry" ] && [ "$IS_PRIVATE" = "true" ]; then
+            registry="$PRIVATE_REGISTRY_URL"
+          fi
+          if [ -z "$scope" ] && [ "$registry" = "$PRIVATE_REGISTRY_URL" ]; then
+            scope="$PRIVATE_SCOPE"
+          fi
+          if [ -n "$registry" ] && ! [[ "$registry" =~ ^https://[a-z0-9.-]+(/[A-Za-z0-9._~-]+)*/?$ ]]; then
+            echo "::error::The registry \"$registry\" is not an https address, such as https://npm.pkg.github.com."
+            exit 1
+          fi
+          if [ -n "$scope" ] && ! [[ "$scope" =~ ^@[a-z0-9][a-z0-9._-]*$ ]]; then
+            echo "::error::The scope \"$scope\" is not a scope, such as @noldova-com."
+            exit 1
+          fi
+          if ! [[ "$PUBLISH_REGISTRY" =~ ^https://[a-z0-9.-]+(/[A-Za-z0-9._~-]+)*/?$ ]]; then
+            echo "::error::The publish registry \"$PUBLISH_REGISTRY\" is not an https address, such as https://registry.npmjs.org."
+            exit 1
+          fi
+          if ! [[ "$PUBLISH_SCOPE" =~ ^@[a-z0-9][a-z0-9._-]*$ ]]; then
+            echo "::error::The publish scope \"$PUBLISH_SCOPE\" is not a scope, such as @noldova."
+            exit 1
+          fi
+          if [ "$PUBLISH_ACCESS" != public ] && [ "$PUBLISH_ACCESS" != restricted ]; then
+            echo "::error::The publish access \"$PUBLISH_ACCESS\" must be public or restricted."
+            exit 1
+          fi
+          if { [ -n "$registry" ] && [ -z "$scope" ]; } || { [ -z "$registry" ] && [ -n "$scope" ]; }; then
+            echo "::error::install-registry-url and install-scope go together: a registry with no scope would serve every package, and a scope with no registry means nothing."
+            exit 1
+          fi
+          if ! [[ "$RETENTION" =~ ^[0-9]+$ ]] || [ "$RETENTION" -lt 1 ] || [ "$RETENTION" -gt 90 ]; then
+            echo "::error::retention-days must be a whole number from 1 to 90."
+            exit 1
+          fi
+          printf 'node-version=%s\n' "$NODE" >> "$GITHUB_OUTPUT"
+          printf 'npm-version=%s\n' "$NPM" >> "$GITHUB_OUTPUT"
+          printf 'install-registry-url=%s\n' "$registry" >> "$GITHUB_OUTPUT"
+          printf 'install-scope=%s\n' "$scope" >> "$GITHUB_OUTPUT"
+          printf 'publish-registry-url=%s\n' "$PUBLISH_REGISTRY" >> "$GITHUB_OUTPUT"
+          printf 'publish-scope=%s\n' "$PUBLISH_SCOPE" >> "$GITHUB_OUTPUT"
+          printf 'publish-access=%s\n' "$PUBLISH_ACCESS" >> "$GITHUB_OUTPUT"
+          printf 'retention-days=%s\n' "$RETENTION" >> "$GITHUB_OUTPUT"
+          echo "Node: $NODE; npm: ${NPM:-not checked}"
+          echo "Install registry: ${registry:-none besides npm}${scope:+ for $scope}; publishes to $PUBLISH_REGISTRY as $PUBLISH_SCOPE, $PUBLISH_ACCESS; artifacts kept $RETENTION days"
+          declare -A chosen
+          for target in linux-x64 linux-arm64 windows-x64 windows-arm64 macos-x64 macos-arm64; do
+            key="${target^^}"
+            key="${key//-/_}"
+            override="OVERRIDE_$key"
+            self_hosted="SELF_HOSTED_$key"
+            hosted="HOSTED_$key"
+            if [ -n "${!override}" ]; then
+              runner="${!override}"
+            elif [ "$IS_PRIVATE" = "true" ] && [ "$RUNNER_TYPE" != "GITHUB" ]; then
+              runner="${!self_hosted}"
+            else
+              runner="\"${!hosted}\""
+            fi
+            if [ "$IS_PRIVATE" != "true" ] && [ -n "$runner" ] && ! [[ "$runner" =~ ^\"(ubuntu|windows|macos)-[a-z0-9.-]+\"$ ]]; then
+              echo "::error::The $target runner $runner isn't one GitHub hosts: a public repository runs only on GitHub-hosted runners, named by one label such as \"ubuntu-24.04\"."
+              exit 1
+            fi
+            chosen[$target]="$runner"
+            printf 'runs-on-%s=%s\n' "$target" "$runner" >> "$GITHUB_OUTPUT"
+            echo "$target: ${runner:-none}"
+          done
+          read -ra wanted <<< "$TARGETS"
+          for target in "${wanted[@]}"; do
+            case "$target" in
+              linux-x64 | linux-arm64 | windows-x64 | windows-arm64 | macos-x64 | macos-arm64) ;;
+              *)
+                echo "::error::\"$target\" isn't a target; the targets are linux-x64, linux-arm64, windows-x64, windows-arm64, macos-x64 and macos-arm64."
+                exit 1
+                ;;
+            esac
+            if [ -z "${chosen[$target]}" ]; then
+              echo "::error::No $target runner: this repository has none by default; pass runs-on-$target to name one."
+              exit 1
+            fi
+          done
