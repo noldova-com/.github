@@ -12,6 +12,7 @@ env:
   DEFAULT_PARALLEL_JOBS_PER_TARGET: &default-parallel-jobs-per-target '2'
   DEFAULT_TIMEOUT_MINUTES: &default-timeout-minutes '120'
   DEFAULT_TARGETS: &default-targets linux-x64 windows-x64
+  DEFAULT_SCRIPT: &default-script test
   npm_config_ignore_scripts: 'true'
 
 on:
@@ -22,9 +23,21 @@ on:
         type: string
         default: ''
       filter:
-        description: The filters npm test takes, separated by spaces; empty runs the whole suite
+        description: The filters the script takes, separated by spaces; empty runs the whole suite
         type: string
         default: ''
+      script:
+        description: The npm script each run runs with the filters, such as an end-to-end test's
+        type: string
+        default: *default-script
+      prepare:
+        description: The npm scripts each job runs once after the build and before the runs, separated by spaces, such as an app's install and build
+        type: string
+        default: ''
+      display:
+        description: Runs each run on Linux under a virtual display and a session bus, for a test that opens windows
+        type: boolean
+        default: false
       runs:
         description: Runs in total per target, 1 to 200
         type: string
@@ -201,6 +214,20 @@ jobs:
             test "$(npm --version)" = "$NPM_VERSION"
           fi
 
+      - name: Check the scripts
+        env:
+          SCRIPT: ${{ inputs.script }}
+          PREPARE: ${{ inputs.prepare }}
+        run: |
+          node -e '
+            const scripts = require("./package.json").scripts ?? {};
+            const names = [process.env.SCRIPT, ...process.env.PREPARE.split(/\s+/).filter(t => t !== "")];
+            const missing = names.filter(t => !Object.hasOwn(scripts, t));
+            if (missing.length > 0) {
+              console.log(`::error::The package has no npm script ${missing.map(t => JSON.stringify(t)).join(", ")}.`);
+              process.exit(1);
+            }'
+
       - name: Install the dependencies
         env:
           NODE_AUTH_TOKEN: ${{ needs.versions.outputs.install-registry-url == 'https://npm.pkg.github.com' && github.token || '' }}
@@ -215,21 +242,39 @@ jobs:
           NODE_AUTH_TOKEN: ${{ needs.versions.outputs.install-registry-url == 'https://npm.pkg.github.com' && github.token || '' }}
         run: npm run build
 
+      - name: Prepare the tests
+        if: inputs.prepare != ''
+        env:
+          NODE_AUTH_TOKEN: ${{ needs.versions.outputs.install-registry-url == 'https://npm.pkg.github.com' && github.token || '' }}
+          PREPARE: ${{ inputs.prepare }}
+        run: |
+          set -euo pipefail
+          read -r -a prepare <<< "$PREPARE"
+          for script in "${prepare[@]}"; do
+            npm run "$script"
+          done
+
       - name: Run the tests
         env:
           FILTER: ${{ inputs.filter }}
+          SCRIPT: ${{ inputs.script }}
+          VIRTUAL_DISPLAY: ${{ inputs.display }}
           RUNS: ${{ matrix.runs }}
           TARGET: ${{ matrix.target }}
           JOB: ${{ matrix.job }}
         run: |
           set -uo pipefail
           read -r -a filters <<< "$FILTER"
+          command=(npm run "$SCRIPT" -- ${filters[@]+"${filters[@]}"})
+          if [ "$VIRTUAL_DISPLAY" = true ] && [ "$RUNNER_OS" = Linux ]; then
+            command=(xvfb-run --auto-servernum --server-args='-screen 0 1920x1080x24' dbus-run-session -- "${command[@]}")
+          fi
           mkdir -p _build/flake-proof
           passed=0
           failed=0
           for run in $(seq 1 "$RUNS"); do
             log="_build/flake-proof/run-$run.log"
-            if npm run test -- ${filters[@]+"${filters[@]}"} > "$log" 2>&1; then
+            if "${command[@]}" > "$log" 2>&1; then
               passed=$(( passed + 1 ))
               rm "$log"
               echo "Run $run passed."

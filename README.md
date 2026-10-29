@@ -139,7 +139,7 @@ on:
         type: string
         default: ''
       filter:
-        description: The filters npm test takes, separated by spaces; empty runs the whole suite
+        description: The filters the script takes, separated by spaces; empty runs the whole suite
         type: string
         default: ''
       runs:
@@ -203,10 +203,16 @@ jobs:
 ```
 
 - The caller's "Concurrency group" job, after versions.yml names its runner, works out the flake-proof job's concurrency group from `ref` and the first 16 hex digits of the filter's SHA-256, since GitHub refuses a run whose group is over 400 characters before it starts, as a filter that names several tests in full makes it. Runs of different filters go side by side; a second run of the same `ref` and `filter` shows its first job done and waits at its flake-proof job until the first run ends.
-- A plan job checks the inputs and splits the runs into up to `jobs` parallel jobs per target; each job checks out `ref`, installs the dependencies with `npm ci`, with no package's install scripts, as [Install scripts](#install-scripts) says, builds with `npm run build` and runs `npm test` with the filters, once per run.
+- A plan job checks the inputs and splits the runs into up to `jobs` parallel jobs per target; each job checks out `ref`, installs the dependencies with `npm ci`, with no package's install scripts, as [Install scripts](#install-scripts) says, builds with `npm run build` and runs the npm script `script`, `test` by default, with the filters, once per run.
 - Each job writes its runs, passes and failures to the run's summary and fails when any run failed; a failed run's last 60 log lines go to the job's log, and its whole log to the job's artifact, kept for the days versions.yml names.
 - `targets` takes any of `linux-x64`, `linux-arm64`, `windows-x64`, `windows-arm64`, `macos-x64` and `macos-arm64`, in any number and order, separated by spaces; a target named twice runs once, and the run fails before the test jobs start on a name that isn't a target or a target with no runner.
 - The caller may also pass `node-version`, `npm-version`, `install-registry-url`, `install-scope`, `retention-days` and `runs-on-<target>`, which [Shared settings](#shared-settings) explains; a caller that passes none takes the defaults.
+- A repository proves an end-to-end test with three more inputs, which its caller adds to its own `workflow_dispatch` and passes on:
+  - `script`: the npm script each run runs, such as `test:e2e`.
+  - `prepare`: npm scripts each job runs once, after `npm run build` and before the runs, separated by spaces, such as an app's install and build. They run with the build's token and with no package's install scripts.
+  - `display`: a boolean, off by default. On Linux it runs each run under `xvfb-run`, on a 1920×1080 screen, and `dbus-run-session`, for a test that opens windows; Windows and macOS runners have a display of their own.
+
+  Before it installs anything, each job checks that `script` and every `prepare` script are npm scripts in the package's `package.json`, and fails otherwise.
 - A test job may take `timeout-minutes`, 120 by default and up to 360, which a caller with a slow suite raises.
 - The jobs install from the registries and run on the runners [Shared settings](#shared-settings) names; a private repository's jobs read the organization's private packages from GitHub's registry with the run's own token, which `packages: read` allows, and a public repository's jobs hand npm no token.
 - The caller grants `contents: read` and `packages: read`, since a called job gets no permission its caller didn't grant.
