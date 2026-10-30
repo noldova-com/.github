@@ -11,7 +11,8 @@ GitHub uses them for every repository of the organization that has no copy of it
 | [.github/ISSUE_TEMPLATE/](.github/ISSUE_TEMPLATE) | The bug and feature forms |
 | [.github/PULL_REQUEST_TEMPLATE.md](.github/PULL_REQUEST_TEMPLATE.md) | The pull request form |
 | [standards/](standards/AGENTS.md) | The standards that every repository's code, tests, documents and commits follow |
-| [.github/workflows/require-linked-issue.yml](.github/workflows/require-linked-issue.yml) | The shared check that every pull request names its issue, which also runs on this repository's own pull requests |
+| [.github/workflows/require-linked-issue.yml](.github/workflows/require-linked-issue.yml) | The shared check that every pull request names its issue |
+| [.github/workflows/linked-issue.yml](.github/workflows/linked-issue.yml) | This repository's own caller of the shared check, which runs it on its pull requests from the same commit |
 | [.github/workflows/release-npm.yml](.github/workflows/release-npm.yml) | The shared workflow that releases a repository's npm packages to the registry its caller names |
 | [.github/workflows/flake-proof.yml](.github/workflows/flake-proof.yml) | The shared workflow that runs a repository's tests many times over, to prove a flaky test fixed or to hunt one |
 | [.github/workflows/versions.yml](.github/workflows/versions.yml) | The Node and npm versions and the runners every shared workflow uses, in one place |
@@ -40,6 +41,7 @@ A colon may follow the word directly, and a full stop may follow the number dire
 The number names an issue in this repository, not a pull request: GitHub also closes from a reference such as `owner/repo#123`, but the check refuses it.
 
 Keep the calling job named `linked-issue`: GitHub puts the job's name before the check's, so the check reports as "linked-issue / Require linked issue", the name a required-checks rule must list.
+This repository calls the check the same way, from `linked-issue.yml`, through the local path `./.github/workflows/require-linked-issue.yml`, so a pull request here runs the check as it stands on that pull request and reports under the same name.
 The check runs as [Shared settings](#shared-settings) explains.
 
 ## Releasing npm packages
