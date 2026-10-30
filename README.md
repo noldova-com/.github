@@ -11,15 +11,15 @@ GitHub uses them for every repository of the organization that has no copy of it
 | [.github/ISSUE_TEMPLATE/](.github/ISSUE_TEMPLATE) | The bug and feature forms |
 | [.github/PULL_REQUEST_TEMPLATE.md](.github/PULL_REQUEST_TEMPLATE.md) | The pull request form |
 | [standards/](standards/AGENTS.md) | The standards that every repository's code, tests, documents and commits follow |
-| [.github/workflows/require-linked-issue.yml](.github/workflows/require-linked-issue.yml) | The shared check that every pull request names its issue, which also runs on this repository's own pull requests |
+| [.github/workflows/linked-issue.yml](.github/workflows/linked-issue.yml) | The shared check that every pull request names its issue, which every repository, this one included, runs from its own `require-linked-issue.yml` |
 | [.github/workflows/release-npm.yml](.github/workflows/release-npm.yml) | The shared workflow that releases a repository's npm packages to the registry its caller names |
 | [.github/workflows/flake-proof.yml](.github/workflows/flake-proof.yml) | The shared workflow that runs a repository's tests many times over, to prove a flaky test fixed or to hunt one |
 | [.github/workflows/versions.yml](.github/workflows/versions.yml) | The Node and npm versions and the runners every shared workflow uses, in one place |
 
-A repository runs the shared check from its own workflow:
+A repository runs the shared check from its own workflow, `.github/workflows/require-linked-issue.yml`:
 
 ```yaml
-name: Require linked issue
+name: PR
 
 on:
   pull_request:
@@ -31,15 +31,16 @@ permissions:
   pull-requests: read
 
 jobs:
-  linked-issue:
-    uses: noldova-com/.github/.github/workflows/require-linked-issue.yml@<full commit SHA>
+  check:
+    name: Check
+    uses: noldova-com/.github/.github/workflows/linked-issue.yml@<full commit SHA> # <tag>
 ```
 
 A pull request's description names its issue on a line of its own that starts, at its first character, with `Issue` or a GitHub closing keyword (`Close`, `Closes`, `Closed`, `Fix`, `Fixes`, `Fixed`, `Resolve`, `Resolves` or `Resolved`), in any letter case, then the number, such as `Closes #123` or `Issue: #123`.
 A colon may follow the word directly, and a full stop may follow the number directly, as GitHub accepts it; any other text on the line, or a blank before the word or the full stop, fails the check.
 The number names an issue in this repository, not a pull request: GitHub also closes from a reference such as `owner/repo#123`, but the check refuses it.
 
-Keep the calling job named `linked-issue`: GitHub puts the job's name before the check's, so the check reports as "linked-issue / Require linked issue", the name a required-checks rule must list.
+Keep the workflow named `PR` and the calling job named `Check`: GitHub puts the calling job's name before the shared job's, so the check reports as "Check / Linked issue", the name a required-checks rule must list, and a pull request lists it as "PR / Check / Linked issue".
 The check runs as [Shared settings](#shared-settings) explains.
 
 ## Releasing npm packages

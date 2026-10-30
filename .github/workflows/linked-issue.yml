@@ -4,12 +4,9 @@
 # This source code is licensed under the license found in the
 # LICENSE file in the root directory of this source tree.
 
-name: Require linked issue
+name: Linked issue
 
 on:
-  pull_request:
-    branches: [main]
-    types: [opened, edited, synchronize, reopened, ready_for_review]
   workflow_call:
 
 permissions:
@@ -18,12 +15,12 @@ permissions:
 
 jobs:
   versions:
-    name: Versions
+    name: Runner
     uses: $/.github/workflows/versions.yml
     permissions: {}
 
   check-linked-issue:
-    name: Require linked issue
+    name: Linked issue
     needs: versions
     runs-on: ${{ fromJSON(needs.versions.outputs.runs-on-linux-x64) }}
     timeout-minutes: 10
