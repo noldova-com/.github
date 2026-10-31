@@ -50,12 +50,12 @@ public override readonly name: string = "ArgumentException";
 
 ## Files and folders
 
-- A repository's packages live under its `src/`, each in a folder named after the package: `Noldova.<Product>.<Name>`, in PascalCase segments (`Noldova.Example.Shell`).
-  A further segment is added only when the responsibility is nested inside a broader one (`Noldova.Example.Shell.Windows`), never for folder convenience.
+- A repository's packages live under its `src/`, each in a folder named after the package: `noldova.<product>.<name>`, in lowercase segments joined by dots (`noldova.example.shell`).
+  A further segment is added only when the responsibility is nested inside a broader one (`noldova.example.shell.windows`), never for folder convenience.
 - A package's `package.json` sits at its root, with `src/` and `tests/` beside it, each with its own TypeScript configuration; `resources.ts` sits at the root of `src/`:
 
 ```text
-src/Noldova.Example.Shell/
+src/noldova.example.shell/
   package.json
   src/
     api/index.ts
@@ -159,8 +159,9 @@ tests/services/snapshot-tracker.test.ts
 ## Packages
 
 - Each package has its own `package.json` beside its source, with its name, version and entry points.
-  Its name is the scope followed by its folder's segments after `Noldova`, lowercase and joined by hyphens: `Noldova.Context.Text` is `@noldova/context-text`.
+  Its name is the scope followed by its folder's name after `noldova.`: `noldova.context.text` is `@noldova/context.text`.
   A public repository's packages take the `@noldova/` scope on npm's registry, and a private one's `@noldova-com/` on GitHub's.
+  A private repository's packages keep their PascalCase folders and hyphenated names, such as `Noldova.Example.Shell` and `@noldova-com/example-shell`, until the repository goes public, and take this form with their `@noldova/` names.
 - The project's own scripts build the packages: each is built into `_build/packages/<folder name>`, packed with `npm pack` into `_packages/`, and installed from there with `npm install --no-save`, so the repository's own packages never enter its manifest or lockfile.
   No third-party build or packaging tool does this.
 - A package's public test helpers live in `src/testing/`, a source tree beside `src/app/` with the same concept categories.
