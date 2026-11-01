@@ -10,7 +10,7 @@ on:
   workflow_call:
     inputs:
       version:
-        description: The version to release, major.minor.patch, which the commit holds
+        description: The version to release, major.minor.patch, which the commit's version.json holds
         required: true
         type: string
       commit:
@@ -98,6 +98,7 @@ env:
   RELEASE_VERSION: ${{ inputs.version }}
   RELEASE_COMMIT: ${{ inputs.commit }}
   RELEASE_KEEP_VERSIONS: ${{ inputs.keep-versions }}
+  RELEASE_TOOL: '@noldova/tools.pipelines.github@0.0.1'
 
 jobs:
   versions:
@@ -315,8 +316,15 @@ jobs:
             test "$(npm --version)" = "$NPM_VERSION"
           fi
 
+      - name: Install the pipelines tool
+        env:
+          NPM_CONFIG_USERCONFIG: ${{ runner.temp }}/pipelines-tool.npmrc
+        run: |
+          npm install --prefix "$RUNNER_TEMP/pipelines-tool" --registry https://registry.npmjs.org/ --no-audit --no-fund "$RELEASE_TOOL"
+          echo "$RUNNER_TEMP/pipelines-tool/node_modules/.bin" >> "$GITHUB_PATH"
+
       - name: Check that the commit is on main and has the version
-        run: npm run release -- source "$RELEASE_VERSION" "$RELEASE_COMMIT"
+        run: pipelines source "$RELEASE_VERSION" "$RELEASE_COMMIT"
 
       - name: Check out the commit
         run: git checkout --quiet --detach "$RELEASE_COMMIT"
@@ -369,9 +377,7 @@ jobs:
           test "$missing" -eq 0
 
       - name: Check the archives
-        env:
-          NODE_AUTH_TOKEN: ${{ needs.versions.outputs.install-registry-url == 'https://npm.pkg.github.com' && github.token || '' }}
-        run: npm run release -- check _packages "$RELEASE_VERSION" "$RELEASE_COMMIT"
+        run: pipelines archive _packages "$RELEASE_VERSION" "$RELEASE_COMMIT" "$RELEASE_SCOPE"
 
       - name: Keep the archives for releasing
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -424,11 +430,18 @@ jobs:
           name: archives
           path: _packages
 
+      - name: Install the pipelines tool
+        env:
+          NPM_CONFIG_USERCONFIG: ${{ runner.temp }}/pipelines-tool.npmrc
+        run: |
+          npm install --prefix "$RUNNER_TEMP/pipelines-tool" --registry https://registry.npmjs.org/ --no-audit --no-fund "$RELEASE_TOOL"
+          echo "$RUNNER_TEMP/pipelines-tool/node_modules/.bin" >> "$GITHUB_PATH"
+
       - name: Publish the packages
         env:
           npm_config_provenance: ${{ !github.event.repository.private && needs.versions.outputs.publish-registry-url == 'https://registry.npmjs.org' }}
           NODE_AUTH_TOKEN: ${{ secrets.registry-token || needs.versions.outputs.publish-registry-url == 'https://npm.pkg.github.com' && github.token || '' }}
-        run: npm run release -- publish _packages "$RELEASE_VERSION" "$RELEASE_COMMIT"
+        run: pipelines publish _packages "$RELEASE_VERSION" "$RELEASE_COMMIT" "$RELEASE_SCOPE" "$RELEASE_REGISTRY_URL" "$RELEASE_ACCESS"
 
   prune:
     name: Keep the newest versions
@@ -481,7 +494,14 @@ jobs:
           node-version: ${{ needs.versions.outputs.node-version }}
           package-manager-cache: false
 
+      - name: Install the pipelines tool
+        env:
+          NPM_CONFIG_USERCONFIG: ${{ runner.temp }}/pipelines-tool.npmrc
+        run: |
+          npm install --prefix "$RUNNER_TEMP/pipelines-tool" --registry https://registry.npmjs.org/ --no-audit --no-fund "$RELEASE_TOOL"
+          echo "$RUNNER_TEMP/pipelines-tool/node_modules/.bin" >> "$GITHUB_PATH"
+
       - name: Tag the commit with the version
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: npm run release -- tag "$RELEASE_VERSION" "$RELEASE_COMMIT"
+        run: pipelines tag "$RELEASE_VERSION" "$RELEASE_COMMIT"

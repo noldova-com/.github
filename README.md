@@ -55,7 +55,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: The version to release, which the commit holds
+        description: The version to release, which the commit's version.json holds
         required: true
         type: string
       commit:
@@ -87,8 +87,9 @@ jobs:
 - The jobs build and check the archives, publish them in the caller's environment, keep the newest `keep-versions` versions when it is above 0, and tag the commit with the version.
 - The build job installs the dependencies from the registry [Shared settings](#shared-settings) names for installs, as the flake proof does; the run's own token goes to GitHub's registry only.
 - No package's install scripts run in any job, as [Install scripts](#install-scripts) says, and the publishing token is set only on the publish and prune steps.
-- The repository provides the steps as `npm run release -- <step>`: `source <version> <commit>` checks that the commit is on main and holds the version; `check _packages <version> <commit>` checks the built archives; `publish _packages <version> <commit>` publishes them; `prune <version>` deletes the older versions; `tag <version> <commit>` tags the commit.
-- Those steps read the registry, the scope, the access and the number to keep from `RELEASE_REGISTRY_URL`, `RELEASE_SCOPE`, `RELEASE_ACCESS` and `RELEASE_KEEP_VERSIONS`; the publish step's token is in `NODE_AUTH_TOKEN`, the prune step's in `RELEASE_REGISTRY_TOKEN`.
+- The build, publish and tag jobs run the steps of [`@noldova/tools.pipelines.github`](https://www.npmjs.com/package/@noldova/tools.pipelines.github), installed at the exact version `RELEASE_TOOL` names from npm's registry: `pipelines source` checks that the commit is on main and that its `version.json` holds the version; `pipelines archive` checks the built archives; `pipelines publish` publishes them and waits until the registry serves them; `pipelines tag` tags the commit.
+- So the repository provides `version.json` at its root, such as `{ "version": "1.4.0" }`; a `package.json` under `src/`, outside a `tests` folder, for every package it releases, and `"private": true` on any other; and a build that packs each of those packages, and nothing else, into `_packages/` at the version, recording the commit it was built from as `gitHead`, with its other packages as dependencies at that same version.
+- A repository that passes `keep-versions` also provides `npm run release -- prune <version>`, which deletes the older versions; it reads the registry, the scope and the number to keep from `RELEASE_REGISTRY_URL`, `RELEASE_SCOPE` and `RELEASE_KEEP_VERSIONS`, and its token from `RELEASE_REGISTRY_TOKEN`; the publish step's token is in `NODE_AUTH_TOKEN`.
 - Without a `registry-token` secret, GitHub's registry takes the run's own token, and npm's registry takes trusted publishing: the package's trusted publisher names the calling repository, its `release-npm.yml` and its environment, and npm records the run as the version's provenance.
 - Another registry passes its token with `secrets: registry-token: ${{ secrets.<name> }}`, which may name a secret that only the caller's environment holds.
 - A new package's first publish to npm's registry can't use trusted publishing, since the package doesn't exist yet: the caller passes a one-time token held only in its environment, the same way, and removes the secret after the first publish, so the line resolves to empty and trusted publishing takes over.
