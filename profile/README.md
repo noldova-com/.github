@@ -23,7 +23,7 @@ You end up copying text between them, watching each one separately, and remember
 
 **Noldova builds apps that turn those agents into a team, whichever company makes them.**
 They share chats, hand work to each other, and ask you before they do anything you haven't allowed, all on your machine.
-No provider is favored: you pick the agent and the model for each teammate, and they all work the same way, side by side.
+No provider is favored: you pick the agent and the model for each teammate, and they work side by side.
 
 ## TeamRun
 
@@ -32,13 +32,13 @@ No provider is favored: you pick the agent and the model for each teammate, and 
 - **Teammates, not tabs.** Give an agent a name, a role, a model and an effort level, and it becomes a teammate. Mention `@reviewer` in a chat and that teammate answers. Agents from different providers sit in the same chat and read the same history.
 - **They work with each other.** A teammate can start a chat, bring in another teammate, hand over a task and read the answer. One reply that mentions another teammate passes the work on.
 - **You decide what runs.** Every action an agent wants to take raises a request you can see, allow or refuse. Choose per teammate how much it may do without asking, and stop any reply at any moment.
-- **Bring the agents you already use.** TeamRun drives the coding agents you're already signed in to, with your own subscriptions, and shows their thinking, tool calls, plans and sub-agents in one consistent view, whichever provider they come from.
-- **A real workspace around the chat.** A terminal where agents run commands with your approval, a browser they can drive, checkpoints that show what changed in your files and put them back, and, in preview, computer use with a stop control on screen while the agent acts.
+- **Bring the agents you already use.** TeamRun drives the coding agents you're already signed in to, with your own subscriptions, and shows what each one reports, such as its thinking, tool calls, plans and sub-agents, in one consistent view.
+- **A real workspace around the chat.** A terminal where agents run commands with your approval, checkpoints that show what changed in your files and put them back, and, in preview, computer use with a stop control on screen while the agent acts.
 - **Your data stays yours.** Chats, teammates and settings live on your computer.  
-- **Fast with long work.** A chat with ten thousand messages, files and edits opens and scrolls without waiting.
-- **Scriptable.** The `teamrun` command line sends messages, manages teammates and reads chats, so you can drive your team from scripts and other tools.
+- **Built for long work.** We test a chat of ten thousand messages, with files and edits, for how it opens and scrolls.
+- **Scriptable.** The `teamrun` command line sends messages, manages chats and providers and reads chats, so you can drive your team from scripts and other tools.
 
-TeamRun runs on **Windows, macOS and Linux**, on **x64 and ARM64**.
+TeamRun runs on **Windows, macOS and Linux** on x64.
 
 ## One platform, many apps
 
@@ -66,7 +66,7 @@ flowchart TB
 
 ## How we build
 
-- **Any provider.** Our apps tie you to no AI company: each teammate runs on the provider and model you choose, with your own subscription, and all of them share one chat and one way of working.
+- **Any provider.** Our apps tie you to no AI company: each teammate runs on the provider and model you choose, with your own subscription, and all of them share one chat.
 - **You stay in control.** An agent asks before it acts, you see what it does while it does it, and you can stop it or put your files back.
 - **Local first.** Your work and your history stay on your machine.  
 - **Open.** We're opening our apps and the platform under them, one repository at a time, under the MIT license, so anyone can read exactly what they do with your data and your subscriptions.
