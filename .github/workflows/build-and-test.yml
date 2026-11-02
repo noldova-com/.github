@@ -121,7 +121,7 @@ jobs:
           scope: ${{ needs.versions.outputs.install-scope }}
 
       - name: Build the packages
-        env: &install-token
+        env:
           NODE_AUTH_TOKEN: ${{ needs.versions.outputs.install-registry-url == 'https://npm.pkg.github.com' && github.token || '' }}
         run: npm run build
 
@@ -157,7 +157,11 @@ jobs:
 
       - name: Check that a second build packs the same archives
         if: inputs.publishes
-        env: *install-token
+        env:
+          NODE_AUTH_TOKEN: ${{ needs.versions.outputs.install-registry-url == 'https://npm.pkg.github.com' && github.token || '' }}
+          GIT_CONFIG_COUNT: '1'
+          GIT_CONFIG_KEY_0: core.longpaths
+          GIT_CONFIG_VALUE_0: 'true'
         run: pipelines reproducible _packages
 
       - name: Check the archives as the release does
