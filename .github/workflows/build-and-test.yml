@@ -1,0 +1,188 @@
+# @license
+# Copyright (c) Noldova.
+#
+# This source code is licensed under the license found in the
+# LICENSE file in the root directory of this source tree.
+
+name: Build and test
+
+on:
+  workflow_call:
+    inputs:
+      targets:
+        description: The targets to build and test on, separated by spaces, from linux-x64, linux-arm64, windows-x64, windows-arm64, macos-x64 and macos-arm64
+        required: true
+        type: string
+      publishes:
+        description: Whether the repository releases packages, so each target also checks that a second build packs the same archives and that the archives pass the release's check
+        type: boolean
+        default: false
+      tool-from-source:
+        description: Whether to run the pipelines tool the build just packed, instead of the version this workflow pins, for the repository that holds the tool
+        type: boolean
+        default: false
+      timeout-minutes:
+        description: The minutes each target's job may take
+        type: number
+        default: 30
+      node-version:
+        description: Overrides the Node version versions.yml names, such as 24.21.0
+        type: string
+        default: ''
+      npm-version:
+        description: Overrides the npm version versions.yml names, such as 11.19.0
+        type: string
+        default: ''
+      install-registry-url:
+        description: Overrides the registry versions.yml names for the scope's packages, such as https://npm.pkg.github.com
+        type: string
+        default: ''
+      install-scope:
+        description: Overrides the scope versions.yml names for that registry, such as @noldova-com
+        type: string
+        default: ''
+      runs-on-linux-x64:
+        description: Overrides the Linux x64 runner, as the JSON runs-on takes
+        type: string
+        default: ''
+      runs-on-linux-arm64:
+        description: Overrides the Linux arm64 runner, as the JSON runs-on takes
+        type: string
+        default: ''
+      runs-on-windows-x64:
+        description: Overrides the Windows x64 runner, as the JSON runs-on takes
+        type: string
+        default: ''
+      runs-on-windows-arm64:
+        description: Overrides the Windows arm64 runner, as the JSON runs-on takes
+        type: string
+        default: ''
+      runs-on-macos-x64:
+        description: Overrides the macOS x64 runner, as the JSON runs-on takes
+        type: string
+        default: ''
+      runs-on-macos-arm64:
+        description: Overrides the macOS arm64 runner, as the JSON runs-on takes
+        type: string
+        default: ''
+
+permissions: {}
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  npm_config_ignore_scripts: 'true'
+  PIPELINES_TOOL: '@noldova/tools.pipelines.github@0.0.3'
+
+jobs:
+  versions:
+    name: Versions
+    uses: $/.github/workflows/versions.yml
+    permissions: {}
+    with:
+      targets: ${{ inputs.targets }}
+      node-version: ${{ inputs.node-version }}
+      npm-version: ${{ inputs.npm-version }}
+      install-registry-url: ${{ inputs.install-registry-url }}
+      install-scope: ${{ inputs.install-scope }}
+      runs-on-linux-x64: ${{ inputs.runs-on-linux-x64 }}
+      runs-on-linux-arm64: ${{ inputs.runs-on-linux-arm64 }}
+      runs-on-windows-x64: ${{ inputs.runs-on-windows-x64 }}
+      runs-on-windows-arm64: ${{ inputs.runs-on-windows-arm64 }}
+      runs-on-macos-x64: ${{ inputs.runs-on-macos-x64 }}
+      runs-on-macos-arm64: ${{ inputs.runs-on-macos-arm64 }}
+
+  build-and-test:
+    name: ${{ matrix.name }}
+    needs: versions
+    runs-on: ${{ fromJSON(needs.versions.outputs[format('runs-on-{0}', matrix.target)]) }}
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    permissions:
+      contents: read
+      packages: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.versions.outputs.targets) }}
+    steps:
+      - name: Check out the revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: ${{ needs.versions.outputs.node-version }}
+          package-manager-cache: false
+          registry-url: ${{ needs.versions.outputs.install-registry-url }}
+          scope: ${{ needs.versions.outputs.install-scope }}
+
+      - name: Build the packages
+        env:
+          NODE_AUTH_TOKEN: ${{ needs.versions.outputs.install-registry-url == 'https://npm.pkg.github.com' && github.token || '' }}
+        run: npm run build
+
+      - name: Install the pipelines tool
+        env:
+          NPM_CONFIG_USERCONFIG: ${{ runner.temp }}/pipelines-tool.npmrc
+          TOOL_FROM_SOURCE: ${{ inputs.tool-from-source }}
+        run: |
+          shopt -s failglob
+          tool="$PIPELINES_TOOL"
+          if [ "$TOOL_FROM_SOURCE" = true ]; then
+            mkdir "$RUNNER_TEMP/pipelines-archives"
+            cp _packages/*.tgz "$RUNNER_TEMP/pipelines-archives/"
+            tool="$(echo "$RUNNER_TEMP"/pipelines-archives/*.tgz)"
+          fi
+          npm install --prefix "$RUNNER_TEMP/pipelines-tool" --registry https://registry.npmjs.org/ --no-audit --no-fund $tool
+          echo "$RUNNER_TEMP/pipelines-tool/node_modules/.bin" >> "$GITHUB_PATH"
+
+      - name: Check the toolchain
+        env:
+          NODE_VERSION: ${{ needs.versions.outputs.node-version }}
+          NPM_VERSION: ${{ needs.versions.outputs.npm-version }}
+        run: pipelines toolchain "$NODE_VERSION" $NPM_VERSION
+
+      - name: Check the line endings
+        run: pipelines line-endings
+
+      - name: Test the packages
+        run: npm run test -- --skip-test-details --skip-coverage-details
+
+      - name: Check that tracked files are unchanged
+        run: pipelines unchanged
+
+      - name: Check that a second build packs the same archives
+        if: inputs.publishes
+        env:
+          NODE_AUTH_TOKEN: ${{ needs.versions.outputs.install-registry-url == 'https://npm.pkg.github.com' && github.token || '' }}
+          GIT_CONFIG_COUNT: '1'
+          GIT_CONFIG_KEY_0: core.longpaths
+          GIT_CONFIG_VALUE_0: 'true'
+        run: pipelines reproducible _packages
+
+      - name: Check the archives as the release does
+        if: inputs.publishes
+        env:
+          RELEASE_SCOPE: ${{ needs.versions.outputs.publish-scope }}
+        run: pipelines archive _packages "$(node -p 'require("./version.json").version')" "$(git rev-parse HEAD)" "$RELEASE_SCOPE"
+
+  all-targets:
+    name: All targets
+    needs: [versions, build-and-test]
+    if: always()
+    runs-on: ${{ fromJSON(needs.versions.outputs.runs-on-linux-x64) }}
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Require every target to pass
+        env:
+          VERSIONS_RESULT: ${{ needs.versions.result }}
+          RESULT: ${{ needs.build-and-test.result }}
+        run: |
+          echo "The versions' result: $VERSIONS_RESULT; the targets' result: $RESULT"
+          test "$VERSIONS_RESULT" = success
+          test "$RESULT" = success
