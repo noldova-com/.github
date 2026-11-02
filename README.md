@@ -12,6 +12,7 @@ GitHub uses them for every repository of the organization that has no copy of it
 | [.github/PULL_REQUEST_TEMPLATE.md](.github/PULL_REQUEST_TEMPLATE.md) | The pull request form |
 | [standards/](standards/AGENTS.md) | The standards that every repository's code, tests, documents and commits follow |
 | [.github/workflows/linked-issue.yml](.github/workflows/linked-issue.yml) | The shared check that every pull request names its issue, which every repository, this one included, runs from its own `require-linked-issue.yml` |
+| [.github/workflows/build-and-test.yml](.github/workflows/build-and-test.yml) | The shared workflow that builds and tests a repository on each of its targets, with the checks every repository runs |
 | [.github/workflows/release-npm.yml](.github/workflows/release-npm.yml) | The shared workflow that releases a repository's npm packages to the registry its caller names |
 | [.github/workflows/flake-proof.yml](.github/workflows/flake-proof.yml) | The shared workflow that runs a repository's tests many times over, to prove a flaky test fixed or to hunt one |
 | [.github/workflows/versions.yml](.github/workflows/versions.yml) | The Node and npm versions and the runners every shared workflow uses, in one place |
@@ -42,6 +43,47 @@ The number names an issue in this repository, not a pull request: GitHub also cl
 
 Keep the workflow named `PR` and the calling job named `Check`: GitHub puts the calling job's name before the shared job's, so the check reports as "Check / Linked issue", the name a required-checks rule must list, and a pull request lists it as "PR / Check / Linked issue".
 The check runs as [Shared settings](#shared-settings) explains.
+
+## Building and testing
+
+A repository builds and tests every pull request and every push to main from its own workflow, `.github/workflows/build-and-test.yml`, which names its settings only:
+
+```yaml
+name: Build and test
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build-and-test:
+    name: Build and test
+    uses: noldova-com/.github/.github/workflows/build-and-test.yml@<full commit SHA> # <tag>
+    permissions:
+      contents: read
+      packages: read
+    with:
+      targets: linux-x64 windows-x64
+      publishes: true
+```
+
+- `targets` names the targets, from `linux-x64`, `linux-arm64`, `windows-x64`, `windows-arm64`, `macos-x64` and `macos-arm64`; each gets a job of its own, named as its runner's system and architecture, such as "Linux x64".
+- Each target's job builds with `npm run build`, then checks with the `pipelines` steps of [`@noldova/tools.pipelines.github`](https://www.npmjs.com/package/@noldova/tools.pipelines.github), installed at the exact version `PIPELINES_TOOL` names from npm's registry: `pipelines toolchain` checks the Node and npm versions [Shared settings](#shared-settings) names; `pipelines line-endings` checks that `.gitattributes` holds `* text=auto eol=lf` and that every tracked text file uses LF line endings and ends with exactly one newline; then `npm run test -- --skip-test-details --skip-coverage-details` runs the tests, and `pipelines unchanged` checks that the build and the tests changed no tracked file and left no untracked file outside the ignored outputs.
+- With `publishes: true`, for a repository that releases packages as [Releasing npm packages](#releasing-npm-packages) says, `pipelines reproducible _packages` builds the commit again in another folder and checks that the archives are byte-identical, and `pipelines archive` checks them as the release does, at the version `version.json` holds.
+- With `tool-from-source: true`, for the repository that holds the tool, the jobs install the tool from the archives the build just packed in `_packages/` instead, so a change to a step is checked by the run that tests it.
+- `timeout-minutes` bounds each target's job, 30 by default; the Node, npm, install registry and runner overrides are those of [Shared settings](#shared-settings).
+- The build steps get the run's own token for GitHub's registry only, as the release's build does; the tests and the checks get none.
+- An "All targets" job passes only when every target passed. Keep the calling job named `Build and test`: GitHub puts its name before the shared jobs', so a required-checks rule lists "Build and test / All targets", and a pull request lists each target as "Build and test / Build and test / Linux x64".
 
 ## Releasing npm packages
 
@@ -224,7 +266,7 @@ jobs:
 
 ## Install scripts
 
-- The release and flake proof workflows set `npm_config_ignore_scripts`, so every npm their jobs run, `npm ci` and any npm a repository's own scripts run, runs no package's install scripts while the run's token is set.
+- The build and test, release and flake proof workflows set `npm_config_ignore_scripts`, so every npm their jobs run, `npm ci` and any npm a repository's own scripts run, runs no package's install scripts while the run's token is set.
 - `npm ci` then runs none of the repository's own install scripts either, so after it the install step runs the root `package.json`'s `preinstall`, `install`, `postinstall` and `prepare` scripts by name, in that order, each only when the root has it; an npm they run installs with no package's install scripts too.
 - Nothing else runs: not `prepublish`, `preprepare` or `postprepare`, not `preinstall` before the dependencies as `npm ci` would run it, and not a workspace's scripts, so an install that needs any other script needs a step of its own in these workflows.
 - `npm run` still runs the script it names, such as `npm run build` or `npm test`, but not its `pre` and `post` scripts, so a repository puts what those would run in the script itself.

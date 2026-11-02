@@ -112,6 +112,9 @@ on:
       runs-on-macos-arm64:
         description: The macOS arm64 runner, as the JSON runs-on takes; empty when there is none
         value: ${{ jobs.versions.outputs.runs-on-macos-arm64 }}
+      targets:
+        description: The targets the caller named, each once and in its order, as a JSON list of objects with the target and its display name, such as [{"target":"linux-x64","name":"Linux x64"}]
+        value: ${{ jobs.versions.outputs.targets }}
 
 permissions: {}
 
@@ -158,6 +161,7 @@ jobs:
       runs-on-windows-arm64: ${{ steps.versions.outputs.runs-on-windows-arm64 }}
       runs-on-macos-x64: ${{ steps.versions.outputs.runs-on-macos-x64 }}
       runs-on-macos-arm64: ${{ steps.versions.outputs.runs-on-macos-arm64 }}
+      targets: ${{ steps.versions.outputs.targets }}
     steps:
       - name: Choose the versions
         id: versions
@@ -264,6 +268,8 @@ jobs:
             echo "$target: ${runner:-none}"
           done
           read -ra wanted <<< "$TARGETS"
+          declare -A listed
+          entries=()
           for target in "${wanted[@]}"; do
             case "$target" in
               linux-x64 | linux-arm64 | windows-x64 | windows-arm64 | macos-x64 | macos-arm64) ;;
@@ -276,4 +282,15 @@ jobs:
               echo "::error::No $target runner: this repository has none by default; pass runs-on-$target to name one."
               exit 1
             fi
+            if [ -n "${listed[$target]:-}" ]; then
+              continue
+            fi
+            listed[$target]=1
+            case "${target%-*}" in
+              linux) system=Linux ;;
+              windows) system=Windows ;;
+              macos) system=macOS ;;
+            esac
+            entries+=("{\"target\":\"$target\",\"name\":\"$system ${target#*-}\"}")
           done
+          printf 'targets=[%s]\n' "$(IFS=,; echo "${entries[*]}")" >> "$GITHUB_OUTPUT"
