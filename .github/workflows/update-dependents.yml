@@ -101,6 +101,16 @@ jobs:
           npm install --prefix "$RUNNER_TEMP/pipelines-tool" --registry https://registry.npmjs.org/ --no-audit --no-fund "$PIPELINES_TOOL"
           echo "$RUNNER_TEMP/pipelines-tool/node_modules/.bin" >> "$GITHUB_PATH"
 
+      - name: Check that the App's key is passed
+        env:
+          APP_KEY: ${{ secrets.VERSION_UPDATES_APP_KEY }}
+          ENVIRONMENT: ${{ inputs.environment }}
+        run: |
+          if [ -z "$APP_KEY" ]; then
+            echo "::error::VERSION_UPDATES_APP_KEY is empty: set it in the $ENVIRONMENT environment, and pass secrets: inherit in the calling job."
+            exit 1
+          fi
+
       - name: Create the App's token
         id: token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0

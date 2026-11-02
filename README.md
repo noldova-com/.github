@@ -180,10 +180,12 @@ After a release, a repository proposes the version to every repository that pins
     with:
       version: ${{ inputs.version }}
       commit: ${{ inputs.commit }}
+    secrets: inherit
 ```
 
 - The job runs `pipelines dependents` from [`@noldova/tools.pipelines.github`](https://www.npmjs.com/package/@noldova/tools.pipelines.github), at the exact version `PIPELINES_TOOL` names, in a checkout of the commit; its README says what the step changes and proposes.
 - Its token is a GitHub App's, made in the job from the organization's `VERSION_UPDATES_CLIENT_ID` variable, the App's client ID, and the `VERSION_UPDATES_APP_KEY` secret of the caller's `environment`, `version-updates` unless the caller names another; that environment deploys from `main` only.
+  The caller passes `secrets: inherit`, since a called workflow reads no secret the caller doesn't pass, an environment's included; the job fails first when the key is empty.
 - The App needs contents, issues and pull requests write and metadata read; the repositories its installation is given are the ones the step checks, so a repository joins or leaves by the installation's list.
   The installation must include the releasing repository too, since the step reads the release notes there; it is never updated itself.
 - The commits are the App's bot account's, as author and committer.
