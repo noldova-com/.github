@@ -98,7 +98,7 @@ env:
   RELEASE_VERSION: ${{ inputs.version }}
   RELEASE_COMMIT: ${{ inputs.commit }}
   RELEASE_KEEP_VERSIONS: ${{ inputs.keep-versions }}
-  RELEASE_TOOL: '@noldova/tools.pipelines.github@0.0.1'
+  RELEASE_TOOL: '@noldova/tools.pipelines.github@0.0.2'
 
 jobs:
   versions:
@@ -467,10 +467,17 @@ jobs:
           node-version: ${{ needs.versions.outputs.node-version }}
           package-manager-cache: false
 
+      - name: Install the pipelines tool
+        env:
+          NPM_CONFIG_USERCONFIG: ${{ runner.temp }}/pipelines-tool.npmrc
+        run: |
+          npm install --prefix "$RUNNER_TEMP/pipelines-tool" --registry https://registry.npmjs.org/ --no-audit --no-fund "$RELEASE_TOOL"
+          echo "$RUNNER_TEMP/pipelines-tool/node_modules/.bin" >> "$GITHUB_PATH"
+
       - name: Delete the older versions
         env:
-          RELEASE_REGISTRY_TOKEN: ${{ secrets.registry-token || github.token }}
-        run: npm run release -- prune "$RELEASE_VERSION"
+          GITHUB_TOKEN: ${{ secrets.registry-token || github.token }}
+        run: pipelines prune "$RELEASE_VERSION" "$RELEASE_COMMIT" "$RELEASE_SCOPE" "$RELEASE_REGISTRY_URL" "$RELEASE_KEEP_VERSIONS"
 
   tag:
     name: Tag the version
