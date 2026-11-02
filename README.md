@@ -14,6 +14,7 @@ GitHub uses them for every repository of the organization that has no copy of it
 | [.github/workflows/linked-issue.yml](.github/workflows/linked-issue.yml) | The shared check that every pull request names its issue, which every repository, this one included, runs from its own `require-linked-issue.yml` |
 | [.github/workflows/build-and-test.yml](.github/workflows/build-and-test.yml) | The shared workflow that builds and tests a repository on each of its targets, with the checks every repository runs |
 | [.github/workflows/release-npm.yml](.github/workflows/release-npm.yml) | The shared workflow that releases a repository's npm packages to the registry its caller names |
+| [.github/workflows/update-dependents.yml](.github/workflows/update-dependents.yml) | The shared workflow that proposes a released version to the repositories that pin its packages |
 | [.github/workflows/flake-proof.yml](.github/workflows/flake-proof.yml) | The shared workflow that runs a repository's tests many times over, to prove a flaky test fixed or to hunt one |
 | [.github/workflows/versions.yml](.github/workflows/versions.yml) | The Node and npm versions and the runners every shared workflow uses, in one place |
 
@@ -164,6 +165,28 @@ A package that ships a native addon declares it in its `package.json`, anywhere 
 - The repository's build puts each build in its package at `native/<platform>-<arch>/<name>.node`, and fails when a declared target's build is missing; its own code loads `native/${process.platform}-${process.arch}/<name>.node`.
 - After the build, the release refuses an archive that lacks any of its addons' builds for any target, naming the package, the addon and the target.
 - The addon jobs run on the x64 runners of Linux, macOS and Windows that [Shared settings](#shared-settings) names, and need the organization's own runners, which hold the sysroots: a private repository with `RUNNER_TYPE` set to `GITHUB` passes its own runners with `runs-on-<system>-x64`, and a public repository can't release a package with addons yet: the plan job refuses it.
+
+## Updating dependents
+
+After a release, a repository proposes the version to every repository that pins its packages exactly, with a second job in its release workflow:
+
+```yaml
+  dependents:
+    needs: release
+    uses: noldova-com/.github/.github/workflows/update-dependents.yml@<full commit SHA>
+    permissions:
+      contents: read
+      packages: read
+    with:
+      version: ${{ inputs.version }}
+      commit: ${{ inputs.commit }}
+```
+
+- The job runs `pipelines dependents` from [`@noldova/tools.pipelines.github`](https://www.npmjs.com/package/@noldova/tools.pipelines.github), at the exact version `PIPELINES_TOOL` names, in a checkout of the commit; its README says what the step changes and proposes.
+- Its token is a GitHub App's, made in the job from the organization's `VERSION_UPDATES_APP_ID` variable and the `VERSION_UPDATES_APP_KEY` secret of the caller's `environment`, `version-updates` unless the caller names another; that environment deploys from `main` only.
+- The App needs contents, issues and pull requests write and metadata read; the repositories its installation is given are the ones the step checks, so a repository joins or leaves by the installation's list.
+- The commits are the App's bot account's, as author and committer.
+- npm refreshes the lock files from the registry [Shared settings](#shared-settings) names for installs; the run's own token goes to GitHub's registry only, so the caller grants `packages: read`, and the packages a lock file names must let the calling repository read them.
 
 ## Proving flakes
 
