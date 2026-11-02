@@ -10,7 +10,8 @@ A flaky test is a bug: file it, fix its cause, and never rerun a check to make i
 - **Every target:** the whole suite, unit and UI, passes with 100% coverage on every delivery target.
 - **Fast:** a unit test file finishes in under 1 second, a component spec file's median test in under 100 milliseconds, and the gate (build, checks and unit tests) in under 5 minutes, all measured on a test machine.
   The runner fails a file or a gate that goes over; a slow test is fixed, never given a longer budget.
-  Only a maintainer may accept a unit test file or a single component test over 1 second; the repository's README then names it, its time and why.
+  Only a maintainer may accept a unit test file over 1 second; the repository's README then names the file, its time and why.
+  The README also lists each component test over 1 second, with its time and cause.
   No test waits longer than the event it needs.
 - **Parallel:** any two tests can run at the same time.
   Tests share no ports, files, folders, processes or global state, and nothing runs serially; a test that needs global state gets its own process.
