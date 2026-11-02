@@ -73,6 +73,9 @@ jobs:
     runs-on: ${{ fromJSON(needs.versions.outputs.runs-on-linux-x64) }}
     timeout-minutes: 30
     environment: ${{ inputs.environment }}
+    concurrency:
+      group: update-dependents-${{ github.repository }}
+      cancel-in-progress: false
     permissions:
       contents: read
       packages: read

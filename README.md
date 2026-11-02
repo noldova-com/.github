@@ -185,7 +185,9 @@ After a release, a repository proposes the version to every repository that pins
 - The job runs `pipelines dependents` from [`@noldova/tools.pipelines.github`](https://www.npmjs.com/package/@noldova/tools.pipelines.github), at the exact version `PIPELINES_TOOL` names, in a checkout of the commit; its README says what the step changes and proposes.
 - Its token is a GitHub App's, made in the job from the organization's `VERSION_UPDATES_CLIENT_ID` variable, the App's client ID, and the `VERSION_UPDATES_APP_KEY` secret of the caller's `environment`, `version-updates` unless the caller names another; that environment deploys from `main` only.
 - The App needs contents, issues and pull requests write and metadata read; the repositories its installation is given are the ones the step checks, so a repository joins or leaves by the installation's list.
+  The installation must include the releasing repository too, since the step reads the release notes there; it is never updated itself.
 - The commits are the App's bot account's, as author and committer.
+- One releasing repository's runs take turns, so two quick releases never race on the same branches; another repository's run goes on at the same time.
 - npm refreshes the lock files from the registry [Shared settings](#shared-settings) names for installs; the run's own token goes to GitHub's registry only, so the caller grants `packages: read`, and the packages a lock file names must let the calling repository read them.
 
 ## Proving flakes
