@@ -33,7 +33,9 @@ A flaky test is a bug: file it, fix its cause, and never rerun a check to make i
 
 - **No test-only seams.** Never change production code solely to accommodate tests or coverage: no widened APIs or new exports, weakened visibility, test-only parameters or paths, or altered ownership.
   A test uses an accepted product boundary, or is redesigned around one.
-  The one exception: a test runner may take how it creates its workers and its clock, with its timers, as constructor parameters, defaulting to the real ones, so its own tests can force an order of worker events or a time without sleeps.
+  Two exceptions:
+  - a test runner may take how it creates its workers and its clock, with its timers, as constructor parameters, defaulting to the real ones, so its own tests can force an order of worker events or a time without sleeps;
+  - a long-running program may read its wait times, such as intervals, limits and timeouts, from environment variables through one helper that keeps the real value when a variable is unset or invalid, so its tests can shorten waits instead of sleeping them out; only tests set those variables, and the program's README names them.
 - Test inputs, expected results and fixtures stay independent of production values, so an output change cannot also change the expected answer.
 - Every executable production file has a test file that mirrors its path.
   A file is executable when it has a function body; a file that only declares types, values or re-exports is not, though it may still have a test.
