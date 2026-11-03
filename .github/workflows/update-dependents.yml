@@ -1,0 +1,144 @@
+# @license
+# Copyright (c) Noldova.
+#
+# This source code is licensed under the license found in the
+# LICENSE file in the root directory of this source tree.
+
+name: Update dependents
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: The released version, major.minor.patch
+        required: true
+        type: string
+      commit:
+        description: The full hash of the commit the version was released from
+        required: true
+        type: string
+      environment:
+        description: The calling repository's environment that holds the App's key, deployable from main only
+        type: string
+        default: version-updates
+      node-version:
+        description: Overrides the Node version versions.yml names, such as 24.21.0
+        type: string
+        default: ''
+      npm-version:
+        description: Overrides the npm version versions.yml names, such as 11.19.0
+        type: string
+        default: ''
+      install-registry-url:
+        description: Overrides the registry versions.yml names for installing the scope's packages, such as https://npm.pkg.github.com
+        type: string
+        default: ''
+      install-scope:
+        description: Overrides the scope versions.yml names for that registry, such as @noldova-com
+        type: string
+        default: ''
+      runs-on-linux-x64:
+        description: Overrides the Linux x64 runner, as the JSON runs-on takes
+        type: string
+        default: ''
+
+permissions: {}
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  npm_config_ignore_scripts: 'true'
+  RELEASE_VERSION: ${{ inputs.version }}
+  RELEASE_COMMIT: ${{ inputs.commit }}
+  PIPELINES_TOOL: '@noldova/tools.pipelines.github@0.0.5'
+
+jobs:
+  versions:
+    name: Versions
+    uses: $/.github/workflows/versions.yml
+    permissions: {}
+    with:
+      targets: linux-x64
+      node-version: ${{ inputs.node-version }}
+      npm-version: ${{ inputs.npm-version }}
+      install-registry-url: ${{ inputs.install-registry-url }}
+      install-scope: ${{ inputs.install-scope }}
+      runs-on-linux-x64: ${{ inputs.runs-on-linux-x64 }}
+
+  update:
+    name: Propose the version to the repositories that pin it
+    needs: versions
+    runs-on: ${{ fromJSON(needs.versions.outputs.runs-on-linux-x64) }}
+    timeout-minutes: 30
+    environment: ${{ inputs.environment }}
+    concurrency:
+      group: update-dependents-${{ github.repository }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Check out the commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.commit }}
+          persist-credentials: false
+
+      - name: Set up Node.js for the organization's packages
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: ${{ needs.versions.outputs.node-version }}
+          package-manager-cache: false
+          registry-url: ${{ needs.versions.outputs.install-registry-url }}
+          scope: ${{ needs.versions.outputs.install-scope }}
+
+      - name: Install the pipelines tool
+        env:
+          NPM_CONFIG_USERCONFIG: ${{ runner.temp }}/pipelines-tool.npmrc
+        run: |
+          npm install --prefix "$RUNNER_TEMP/pipelines-tool" --registry https://registry.npmjs.org/ --no-audit --no-fund "$PIPELINES_TOOL"
+          echo "$RUNNER_TEMP/pipelines-tool/node_modules/.bin" >> "$GITHUB_PATH"
+
+      - name: Check that the App's key is passed
+        env:
+          APP_KEY: ${{ secrets.VERSION_UPDATES_APP_KEY }}
+          ENVIRONMENT: ${{ inputs.environment }}
+        run: |
+          if [ -z "$APP_KEY" ]; then
+            echo "::error::VERSION_UPDATES_APP_KEY is empty: set it in the $ENVIRONMENT environment, and pass secrets: inherit in the calling job."
+            exit 1
+          fi
+
+      - name: Create the App's token
+        id: token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.VERSION_UPDATES_CLIENT_ID }}
+          private-key: ${{ secrets.VERSION_UPDATES_APP_KEY }}
+          owner: ${{ github.repository_owner }}
+          permission-contents: write
+          permission-issues: write
+          permission-metadata: read
+          permission-pull-requests: write
+
+      - name: Read the App's bot account
+        id: bot
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          APP_SLUG: ${{ steps.token.outputs.app-slug }}
+        run: |
+          id="$(gh api "users/$APP_SLUG%5Bbot%5D" --jq .id)"
+          echo "name=$APP_SLUG[bot]" >> "$GITHUB_OUTPUT"
+          echo "email=$id+$APP_SLUG[bot]@users.noreply.github.com" >> "$GITHUB_OUTPUT"
+
+      - name: Propose the version
+        env:
+          GITHUB_TOKEN: ${{ steps.token.outputs.token }}
+          NODE_AUTH_TOKEN: ${{ needs.versions.outputs.install-registry-url == 'https://npm.pkg.github.com' && github.token || '' }}
+          GIT_AUTHOR_NAME: ${{ steps.bot.outputs.name }}
+          GIT_AUTHOR_EMAIL: ${{ steps.bot.outputs.email }}
+          GIT_COMMITTER_NAME: ${{ steps.bot.outputs.name }}
+          GIT_COMMITTER_EMAIL: ${{ steps.bot.outputs.email }}
+        run: pipelines dependents "$RELEASE_VERSION" "$RELEASE_COMMIT"
