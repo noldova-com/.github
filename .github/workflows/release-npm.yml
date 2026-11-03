@@ -21,6 +21,10 @@ on:
         description: The calling repository's environment for this registry, which holds its secret and its approval rule
         required: true
         type: string
+      updates-environment:
+        description: The calling repository's environment that holds the version-updates App's key, which the prune job runs in, deployable from main only
+        type: string
+        default: version-updates
       keep-versions:
         description: How many of the newest versions to keep after publishing; 0 keeps every version
         required: false
@@ -451,7 +455,7 @@ jobs:
     runs-on: ${{ fromJSON(needs.versions.outputs.runs-on-linux-x64) }}
     timeout-minutes: 10
     env: *release-registry
-    environment: version-updates
+    environment: ${{ inputs.updates-environment }}
     permissions:
       contents: read
       packages: write
@@ -459,9 +463,10 @@ jobs:
       - name: Check that the App's key is passed
         env:
           APP_KEY: ${{ secrets.VERSION_UPDATES_APP_KEY }}
+          ENVIRONMENT: ${{ inputs.updates-environment }}
         run: |
           if [ -z "$APP_KEY" ]; then
-            echo "::error::VERSION_UPDATES_APP_KEY is empty: set it in the version-updates environment, and pass secrets: inherit in the calling job."
+            echo "::error::VERSION_UPDATES_APP_KEY is empty: set it in the $ENVIRONMENT environment, and pass secrets: inherit in the calling job."
             exit 1
           fi
 
