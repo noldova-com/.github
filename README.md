@@ -145,7 +145,7 @@ jobs:
   A public repository's packages on npm's registry get provenance either way.
 - The caller grants `contents: write`, `packages: write` and `id-token: write`, whichever registry it publishes to, since a called job gets no permission its caller didn't grant.
 - The publish job runs in the caller's environment, which an environment that needs approval approves; an environment name that doesn't exist yet is created on first use, with no protection.
-  The prune job runs in the `version-updates` environment, after that approval, and deletes only versions no repository locks.
+  The prune job runs in the caller's `updates-environment`, with no approval of its own: the publish approval covers its deletes, and it deletes only versions no repository locks.
 - The prune job runs only for GitHub's registry: a version published to npm's registry is never deleted.
 
 ### Native addons
