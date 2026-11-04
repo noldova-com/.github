@@ -76,7 +76,8 @@ Every edge lines up with something: text starts, control ends, field edges, bord
 
 ## Growing lists
 
-- A list that grows over time, such as a conversation, a feed, a log, or a list of plans, tasks or grants, shows its newest item at the bottom, in the same order everywhere.
+- A list of things that arrive over time and are read in that order, such as a conversation, a feed, a log, or a list of plans, background tasks or grants, shows its newest item at the bottom, in the same order everywhere.
+- A list a person navigates or arranges, such as a list of chats or projects, is not covered by this rule.
 - It opens scrolled to the end and follows new items while the person is at the end; once they scroll up, it keeps their place, and it follows again when they return to the end.
 
 ## Interaction states
