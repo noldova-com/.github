@@ -3,6 +3,11 @@
 **Scope:** Working-tree safety, commits and what goes into source control, in every repository.
 Every change starts from an issue, goes on its own branch and reaches `main` through a reviewed pull request that names that issue.
 
+## Automated pull requests
+
+- In a public repository, Dependabot proposes updates of the GitHub Actions its workflows use, once a week in one pull request; it needs no issue and no signature lines.
+- A member reviews it as any pull request, checking the new versions' release notes, and merges it once its checks pass.
+
 ## Working tree
 
 - Verify the repository, remote, working tree and index before editing.

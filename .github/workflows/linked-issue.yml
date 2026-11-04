@@ -29,9 +29,17 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          PR_BRANCH: ${{ github.event.pull_request.head.ref }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           set -euo pipefail
+
+          # Dependabot's updates of GitHub Actions carry no tracking issue; its author and branch name are GitHub's own.
+          if [[ "$PR_AUTHOR" == 'dependabot[bot]' && "$PR_BRANCH" == dependabot/github_actions/* ]]; then
+            echo 'Dependabot updates GitHub Actions; no tracking issue is needed.'
+            exit 0
+          fi
 
           if [[ -z "$PR_NUMBER" ]]; then
             echo '::error::Run this check for a pull request.'
