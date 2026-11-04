@@ -43,7 +43,9 @@ jobs:
           # Dependabot's updates of GitHub Actions carry no tracking issue: its author and branch name are GitHub's own,
           # and every commit must be Dependabot's, signed by GitHub, so no one else's commit passes with them.
           if [[ "$PR_AUTHOR" == 'dependabot[bot]' && "$PR_BRANCH" == dependabot/github_actions/* ]]; then
-            if ! others=$(timeout 30s gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/commits"               -H 'X-GitHub-Api-Version: 2026-03-10'               --jq '.[] | select(.author.login != "dependabot[bot]" or .committer.login != "web-flow" or .commit.verification.verified != true) | .sha'); then
+            if ! others=$(timeout 30s gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/commits" \
+              -H 'X-GitHub-Api-Version: 2026-03-10' \
+              --jq '.[] | select(.author.login != "dependabot[bot]" or .committer.login != "web-flow" or .commit.verification.verified != true) | .sha'); then
               echo '::error::Could not read the pull request commits from GitHub.'
               exit 1
             fi
