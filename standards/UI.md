@@ -74,6 +74,12 @@ Every edge lines up with something: text starts, control ends, field edges, bord
 - Drafts, selections and reading position survive layout changes.
 - Native window controls and application controls occupy separate regions; an overlay's controls are never covered by the operating system's.
 
+## Growing lists
+
+- A list of things that arrive over time and are read in that order, such as a conversation, a feed, a log, or a list of plans, background tasks or grants, shows its newest item at the bottom, in the same order everywhere.
+- A list a person navigates or arranges, such as a list of chats or projects, is not covered by this rule.
+- It opens scrolled to the end and follows new items while the person is at the end; once they scroll up, it keeps their place, and it follows again when they return to the end.
+
 ## Interaction states
 
 - **Hover:** use the row, toolbar or button hover token; a checkbox or field needs no extra hover fill.
