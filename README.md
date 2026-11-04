@@ -16,6 +16,7 @@ GitHub uses them for every repository of the organization that has no copy of it
 | [.github/workflows/release-npm.yml](.github/workflows/release-npm.yml) | The shared workflow that releases a repository's npm packages to the registry its caller names |
 | [.github/workflows/update-dependents.yml](.github/workflows/update-dependents.yml) | The shared workflow that proposes a released version to the repositories that pin its packages |
 | [.github/workflows/flake-proof.yml](.github/workflows/flake-proof.yml) | The shared workflow that runs a repository's tests many times over, to prove a flaky test fixed or to hunt one |
+| [.github/workflows/propose-pins.yml](.github/workflows/propose-pins.yml) | This repository's own workflow that proposes each new tag to the repositories that call these workflows |
 | [.github/workflows/versions.yml](.github/workflows/versions.yml) | The Node and npm versions and the runners every shared workflow uses, in one place |
 
 A repository runs the shared check from its own workflow, `.github/workflows/require-linked-issue.yml`:
@@ -199,6 +200,17 @@ After a release, a repository proposes the version to every repository that pins
 - The commits are the App's bot account's, as author and committer.
 - One releasing repository's runs take turns, so two quick releases never race on the same branches; another repository's run goes on at the same time.
 - npm refreshes the lock files from the registry [Shared settings](#shared-settings) names for installs; the run's own token goes to GitHub's registry only, so the caller grants `packages: read`, and the packages a lock file names must let the calling repository read them.
+
+## Reaching the callers
+
+A repository calls these workflows pinned at a full commit, with the tag as a comment, such as `@<full commit SHA> # v2.5.0`, so a change here reaches it only through a new tag and a pull request there:
+
+- A maintainer tags `main` after each change that merges here, `v<major>.<minor>.<patch>`: a patch for a fix, a minor for a new input or behavior, and a major for a change a caller must make changes for.
+- The tag starts this repository's `propose-pins.yml`, which runs `pipelines pins` from [`@noldova/tools.pipelines.github`](https://www.npmjs.com/package/@noldova/tools.pipelines.github), at the exact version `PIPELINES_TOOL` names; its README says which pins move and which stay.
+  In each repository that calls these workflows at an older version of the same major, it proposes the new pins in one pull request with its own issue, from the branch `pipelines/pins-.github`, and a later tag updates that same pull request.
+- Since this repository is public, the step proposes only to public repositories; a private repository moves its pins itself.
+- In a repository with a Dependabot file, Dependabot moves the outside actions, such as `actions/checkout`, once a week, and the step moves only this repository's pins; elsewhere the same pull request also moves the outside actions to the versions these workflows use.
+- The job's token is the version-updates App's, as in [Updating dependents](#updating-dependents), with workflows write as well; the job runs in this repository's `version-updates` environment, which deploys from the version tags only and holds `VERSION_UPDATES_APP_KEY`.
 
 ## Proving flakes
 

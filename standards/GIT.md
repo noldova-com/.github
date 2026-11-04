@@ -6,7 +6,8 @@ Every change but Dependabot's ([below](#automated-pull-requests)) starts from an
 ## Automated pull requests
 
 - In a public repository, Dependabot proposes updates of the outside GitHub Actions its workflows use, once a week in one pull request; it needs no issue and no signature lines.
-- A member reviews it as any pull request, checking the new versions' release notes, and merges it once its checks pass.
+- When the shared workflows get a new tag, the pins step proposes it to each public repository that calls them, in one pull request from `pipelines/pins-.github` with its own issue; its commits are a GitHub App's, with no signature lines.
+- A member reviews each of them as any pull request, checking the new versions' release notes, those of a new major version above all, and merges it once its checks pass.
 
 ## Working tree
 
