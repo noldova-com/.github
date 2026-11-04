@@ -194,6 +194,8 @@ After a release, a repository proposes the version to every repository that pins
   The caller passes `secrets: inherit`, since a called workflow reads no secret the caller doesn't pass, an environment's included; the job fails first when the key is empty.
 - The App needs contents, issues and pull requests write and metadata read; the repositories its installation is given are the ones the step checks, so a repository joins or leaves by the installation's list.
   The installation must include the releasing repository too, since the step reads the release notes there; it is never updated itself.
+- A public repository's run proposes only to public repositories, so a private repository's name never shows in its public log; a private repository's run proposes to every repository the installation is given.
+  The step reads whether the releasing repository is private with the App's token, and counts it as public when it can't read it.
 - The commits are the App's bot account's, as author and committer.
 - One releasing repository's runs take turns, so two quick releases never race on the same branches; another repository's run goes on at the same time.
 - npm refreshes the lock files from the registry [Shared settings](#shared-settings) names for installs; the run's own token goes to GitHub's registry only, so the caller grants `packages: read`, and the packages a lock file names must let the calling repository read them.
