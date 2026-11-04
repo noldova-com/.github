@@ -127,9 +127,49 @@ jobs:
       runs-on-macos-x64: ${{ inputs.runs-on-macos-x64 }}
       runs-on-macos-arm64: ${{ inputs.runs-on-macos-arm64 }}
 
+  tag:
+    name: Tag the version
+    needs: versions
+    runs-on: ${{ fromJSON(needs.versions.outputs.runs-on-linux-x64) }}
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Check out main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ needs.versions.outputs.node-version }}
+          package-manager-cache: false
+
+      - name: Install the pipelines tool
+        env:
+          NPM_CONFIG_USERCONFIG: ${{ runner.temp }}/pipelines-tool.npmrc
+        run: |
+          npm install --prefix "$RUNNER_TEMP/pipelines-tool" --registry https://registry.npmjs.org/ --no-audit --no-fund "$RELEASE_TOOL"
+          echo "$RUNNER_TEMP/pipelines-tool/node_modules/.bin" >> "$GITHUB_PATH"
+
+      - name: Check that the commit is on main and has the version
+        run: pipelines source "$RELEASE_VERSION" "$RELEASE_COMMIT"
+
+      - name: Tag the commit with the version
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          if ! pipelines tag "$RELEASE_VERSION" "$RELEASE_COMMIT"; then
+            echo "::error::The commit isn't tagged, so nothing is built or published. If GitHub answered 403, the likely cause is a workflow change on main after the commit: GitHub lets the run's token tag only a commit whose workflow files match main's. Release main's latest commit, with a new version if this one's changes need it."
+            exit 1
+          fi
+
   plan:
     name: Plan the native addons
-    needs: versions
+    needs: [versions, tag]
     runs-on: ${{ fromJSON(needs.versions.outputs.runs-on-linux-x64) }}
     timeout-minutes: 5
     permissions:
@@ -504,37 +544,3 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.registry-token || github.token }}
           REPOSITORIES_TOKEN: ${{ steps.token.outputs.token }}
         run: pipelines prune "$RELEASE_VERSION" "$RELEASE_COMMIT" "$RELEASE_SCOPE" "$RELEASE_REGISTRY_URL" "$RELEASE_KEEP_VERSIONS"
-
-  tag:
-    name: Tag the version
-    needs: [versions, publish]
-    if: ${{ !cancelled() && needs.publish.result == 'success' }}
-    runs-on: ${{ fromJSON(needs.versions.outputs.runs-on-linux-x64) }}
-    timeout-minutes: 10
-    env: *release-registry
-    permissions:
-      contents: write
-    steps:
-      - name: Check out the commit
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ inputs.commit }}
-          persist-credentials: false
-
-      - name: Set up Node.js
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: ${{ needs.versions.outputs.node-version }}
-          package-manager-cache: false
-
-      - name: Install the pipelines tool
-        env:
-          NPM_CONFIG_USERCONFIG: ${{ runner.temp }}/pipelines-tool.npmrc
-        run: |
-          npm install --prefix "$RUNNER_TEMP/pipelines-tool" --registry https://registry.npmjs.org/ --no-audit --no-fund "$RELEASE_TOOL"
-          echo "$RUNNER_TEMP/pipelines-tool/node_modules/.bin" >> "$GITHUB_PATH"
-
-      - name: Tag the commit with the version
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: pipelines tag "$RELEASE_VERSION" "$RELEASE_COMMIT"
