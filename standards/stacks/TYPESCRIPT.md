@@ -51,6 +51,7 @@ public override readonly name: string = "ArgumentException";
 ## Files and folders
 
 - A repository's packages live under its `src/`, each in a folder named after the package: `noldova.<product>.<name>`, in lowercase segments joined by dots (`noldova.example.shell`).
+  A segment of several words joins them lowercase with nothing between them: `FileWatcher` is `filewatcher`.
   A further segment is added only when the responsibility is nested inside a broader one (`noldova.example.shell.windows`), never for folder convenience.
 - A package's `package.json` sits at its root, with `src/` and `tests/` beside it, each with its own TypeScript configuration; `resources.ts` sits at the root of `src/`:
 
