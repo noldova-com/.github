@@ -343,3 +343,4 @@ A caller overrides any of them for its own runs:
 
 The versions job itself runs on Linux x64 by the same rule, written out in its `runs-on`, since GitHub doesn't let `runs-on` read a workflow's `env`.
 The organization's own runners serve private repositories only, and its variables are visible to them only.
+One more variable, `RUNS_ON_INTERNAL_FEED`, holds as JSON the `runs-on` value of the one runner that writes an app's internal update feed, in a runner group open only to that app's release workflow; no other job runs there.
