@@ -331,6 +331,7 @@ jobs:
 - A private repository's artifacts are kept for 1 day, a public repository's for 7.
 - A public repository's jobs run on GitHub-hosted runners: `ubuntu-24.04` and `ubuntu-24.04-arm` for Linux, `windows-2025` and `windows-11-arm` for Windows, `macos-15-intel` and `macos-15` for macOS, x64 and arm64.
 - A private repository's jobs run where the organization's variables say: with `RUNNER_TYPE` set to `GITHUB`, on the same GitHub-hosted runners; otherwise on the organization's own runners, whose `runs-on` value `RUNS_ON_SELF_HOSTED_<system>` holds as JSON for x64 and `RUNS_ON_SELF_HOSTED_<system>_ARM64` for arm64, for the systems `LINUX`, `WINDOWS` and `MACOS`; a target whose variable is empty has no runner.
+- `RUNS_ON_INTERNAL_FEED` holds, as JSON, the `runs-on` value of the one runner that writes an app's internal update feed, a runner group open only to that app's release workflow; no other job runs there.
 
 A caller overrides any of them for its own runs:
 
