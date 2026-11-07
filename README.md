@@ -151,6 +151,9 @@ jobs:
 - The publish job runs in the caller's environment, which an environment that needs approval approves; an environment name that doesn't exist yet is created on first use, with no protection.
   The prune job runs in the caller's `updates-environment`, with no approval of its own: the publish approval covers its deletes, and it deletes only versions no repository locks.
 - The prune job runs only for GitHub's registry: a version published to npm's registry is never deleted.
+- GitHub's registry serves a version's metadata with only some of its manifest's fields, although the archive it serves holds the whole manifest: `pipelines publish` sends the archive as built, and the registry's metadata drops `peerDependenciesMeta`, `exports`, `type` and `publishConfig`.
+  npm reads `exports` and `type` from the installed package, but it resolves peers from the registry's metadata, so it takes a module's optional peers as required and installs them at the root that installs the module.
+  So a root that installs a module with optional peers from GitHub's registry installs with `--legacy-peer-deps`, set as `legacy-peer-deps=true` in that root's `.npmrc` or passed by the script that installs it, and provides the peers it needs itself.
 
 ### Native addons
 
