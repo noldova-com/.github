@@ -42,10 +42,10 @@ public override readonly name: string = "ArgumentException";
 
 ## Canonical values
 
-- A package's shared strings live in one `src/resources.ts` holding one `Resources` class with camelCase `static readonly` members.
-- A component, directive or service keeps the strings no other part uses in `<name>.resources.ts` beside it, one `<Name>Resources` class of the same form, so a bundler drops the strings of every part an app doesn't import.
-  Only that part, the parts that share its folder, and their specs reach it; a string a part outside that folder needs moves to the package's `Resources`.
-  There are no resource directories, and no other resources classes but a catalog's, below.
+- Each package has one `src/resources.ts` holding one `Resources` class with camelCase `static readonly` members.
+- A package may keep a component's, directive's or service's own strings, those no other part uses, in `<name>.resources.ts` beside it, one `<Name>Resources` class of the same form, so a bundler drops the strings of every part an app doesn't import; the package's own documents say whether it does.
+  Only that part and its specs reach the file; a string any other part needs, even one in the same folder, stays in the package's `Resources`.
+- Beyond these and a catalog's class, below, there are no resource directories or parallel classes.
 - Methods that compose a message start with `format` and combine owned text with runtime values.
 - Code left out of packaged builds, such as a component catalog, keeps its strings in its own resources class beside it, reached only from that code, because a bundler cannot drop members of a class the packaged build still uses.
 - Empty values, ES module specifiers, declarations and configuration keep their required language and toolchain form.
@@ -97,7 +97,7 @@ src/noldova.example.shell/
 - A final role word takes a dot: `node`, `parser`, `lexer`, `reader`, `validator`, `exception` or `service` (`argument.exception.ts`, `source.reader.ts`, `binary-search.service.ts`).
   Other words stay kebab-case (`snapshot-tracker.ts`); a single-word type keeps its name (`exception.ts`); never add `.model`, `.enum` or `.interface`.
 - Exception class names end in `Exception` (`ArgumentException`).
-- Supporting files use their kind suffix: `.test.ts`, `.extensions.ts`, `.fixture.ts` and `.d.ts`.
+- Supporting files use their kind suffix: `.test.ts`, `.extensions.ts`, `.fixture.ts`, `.resources.ts` and `.d.ts`.
   Entry points (`api/index.ts`), `resources.ts`, manifests, TypeScript configuration and the scripts `package.json` runs keep their fixed names.
 
 ## Formatting

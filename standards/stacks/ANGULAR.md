@@ -18,7 +18,7 @@ It adds to [CODE.md](../CODE.md), [TESTING.md](../TESTING.md), [UI.md](../UI.md)
 - An `@Injectable` class named `<Name>Service` lives in `<name>.service.ts`, and every `.service.ts` file holds one.
 - Styles live in `<name>.component.css` through `styleUrl`.
 - Selectors start with the project's prefix (`nol` in the components library), and a feature's selectors with the project's prefix and the feature's id; complete selector names are unique.
-- A template reaches its part's own text through a `resources` field holding the part's `<Name>Resources`, and the package's shared text through a `sharedResources` field holding `Resources`.
+- Templates reach the package's text through a `resources` field, and a part with its own `<Name>Resources` reaches that through a `partResources` field.
 - A member that only its own class's template and host bindings use is protected, and specs reach it through the rendered element.
 
 ## Comments and API
