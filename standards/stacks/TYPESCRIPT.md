@@ -42,8 +42,11 @@ public override readonly name: string = "ArgumentException";
 
 ## Canonical values
 
-- Each package has one `src/resources.ts` holding one `Resources` class with camelCase `static readonly` members; no resource directories or parallel classes.
-  Methods that compose a message start with `format` and combine owned text with runtime values.
+- A package's shared strings live in one `src/resources.ts` holding one `Resources` class with camelCase `static readonly` members.
+- A component, directive or service keeps the strings no other part uses in `<name>.resources.ts` beside it, one `<Name>Resources` class of the same form, so a bundler drops the strings of every part an app doesn't import.
+  Only that part, the parts that share its folder, and their specs reach it; a string a part outside that folder needs moves to the package's `Resources`.
+  There are no resource directories, and no other resources classes but a catalog's, below.
+- Methods that compose a message start with `format` and combine owned text with runtime values.
 - Code left out of packaged builds, such as a component catalog, keeps its strings in its own resources class beside it, reached only from that code, because a bundler cannot drop members of a class the packaged build still uses.
 - Empty values, ES module specifiers, declarations and configuration keep their required language and toolchain form.
 - Scripts keep their constants on their owning class, without a shared scripts resources file.
