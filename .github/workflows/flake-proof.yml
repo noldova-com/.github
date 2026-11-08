@@ -254,6 +254,11 @@ jobs:
             npm run "$script"
           done
 
+      - name: Install the keyring on GitHub's runner
+        if: inputs.display && runner.os == 'Linux' && runner.environment == 'github-hosted'
+        timeout-minutes: 5
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends gnome-keyring
+
       - name: Run the tests
         env:
           FILTER: ${{ inputs.filter }}
@@ -266,14 +271,23 @@ jobs:
           set -uo pipefail
           read -r -a filters <<< "$FILTER"
           command=(npm run "$SCRIPT" -- ${filters[@]+"${filters[@]}"})
+          keyring=false
           if [ "$VIRTUAL_DISPLAY" = true ] && [ "$RUNNER_OS" = Linux ]; then
-            command=(xvfb-run --auto-servernum --server-args='-screen 0 1920x1080x24' dbus-run-session -- "${command[@]}")
+            command -v gnome-keyring-daemon >/dev/null || { echo "::error::gnome-keyring isn't installed on this runner; display mode needs it."; exit 1; }
+            keyring=true
+            command=(xvfb-run --auto-servernum --server-args='-screen 0 1920x1080x24' dbus-run-session -- sh -c 'echo | XDG_DATA_HOME="$KEYRING/data" gnome-keyring-daemon --unlock --components=secrets --control-directory="$KEYRING/control" >/dev/null && exec "$@"' sh "${command[@]}")
           fi
           mkdir -p _build/flake-proof
           passed=0
           failed=0
           for run in $(seq 1 "$RUNS"); do
             log="_build/flake-proof/run-$run.log"
+            if [ "$keyring" = true ]; then
+              export KEYRING="$RUNNER_TEMP/flake-proof-keyring/$JOB-$run"
+              mkdir -p "$KEYRING/data/keyrings"
+              mkdir -m 700 "$KEYRING/control"
+              printf login > "$KEYRING/data/keyrings/default"
+            fi
             if "${command[@]}" > "$log" 2>&1; then
               passed=$(( passed + 1 ))
               rm "$log"

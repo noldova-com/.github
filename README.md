@@ -309,7 +309,7 @@ jobs:
 - A repository proves an end-to-end test with three more inputs, which its caller adds to its own `workflow_dispatch` and passes on:
   - `script`: the npm script each run runs, such as `test:e2e`.
   - `prepare`: npm scripts each job runs once, after `npm run build` and before the runs, separated by spaces, such as an app's install and build. They run with the build's token and with no package's install scripts.
-  - `display`: a boolean, off by default. On Linux it runs each run under `xvfb-run`, on a 1920×1080 screen, and `dbus-run-session`, for a test that opens windows; Windows and macOS runners have a display of their own.
+  - `display`: a boolean, off by default. On Linux it runs each run under `xvfb-run`, on a 1920×1080 screen, and `dbus-run-session`, for a test that opens windows, with an unlocked `gnome-keyring` secret service on a new empty keyring, for a test whose app keeps a secret; it installs `gnome-keyring` on a GitHub-hosted runner and fails on a self-hosted one without it. Windows and macOS runners have a display and a secret store of their own.
 
   Before it installs anything, each job checks that `script` and every `prepare` script are npm scripts in the package's `package.json`, and fails otherwise.
 - A test job may take `timeout-minutes`, 120 by default and up to 360, which a caller with a slow suite raises.
