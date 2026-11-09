@@ -20,6 +20,7 @@ It adds to [CODE.md](../CODE.md), [TESTING.md](../TESTING.md), [UI.md](../UI.md)
 - Selectors start with the project's prefix (`nol` in the components library), and a feature's selectors with the project's prefix and the feature's id; complete selector names are unique.
 - Templates reach the package's text through a `resources` field, and a part with its own `<Name>Resources` reaches that through a `partResources` field.
 - A member that only its own class's template and host bindings use is protected, and specs reach it through the rendered element.
+- Don't write `changeDetection: ChangeDetectionStrategy.OnPush`; it is the default since Angular 22. Write a strategy only to choose `Eager`, with the reason.
 
 ## Comments and API
 
