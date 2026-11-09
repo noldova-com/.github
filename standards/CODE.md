@@ -176,6 +176,7 @@ Code that no input can reach is removed, not covered: needing a deliberately bro
 
 - No comments unless the code stays confusing after a rename or restructure; prefer renaming.
   Rationale goes in the issue, the PR or the owning document.
+- A comment says what the code is, never how it changed, as [DOCUMENTS.md](DOCUMENTS.md#one-owner-per-rule) says for code and documents.
 - Doc comments appear only in the handwritten public API declarations below.
 - Every public type, member and overload has original documentation sufficient for use without reading the implementation: each parameter, the result, the contractual failures, and examples of normal and boundary use.
   No invented contracts and no empty tags.
