@@ -47,12 +47,16 @@ A flaky test is a bug: file it, fix its cause, and never rerun a check to make i
 ## Determinism
 
 No test is flaky by nature: a test that sometimes fails is a bug in the test or in the code.
+A flaky test sometimes passes and sometimes fails under the same conditions.
+A test that fails because it waits a fixed time, or must finish within one, is a timing issue, never a flake.
 
+- **A timing test** is one whose pass condition is a time, such as an answer within 100 ms.
+  It is labelled as a timing test and states why that time, including what a busy machine does to it; a time without its reason doesn't pass review.
 - **Wait on events or conditions, never a fixed sleep.**
   A limit only bounds a hang: it is generous and is never what the test checks.
 - **A polling wait is bounded** and fails with a message that says what it waited for.
 - **Fixed pauses are listed.** Test code pauses for a fixed time only in the files the repository's README lists in its Checks section, each with its reason; review refuses one anywhere else.
-- **No retries in test code** and no tight deadline as a pass condition.
+- **No retries in test code,** and no deadline as a pass condition outside a timing test.
 - **A flaky test is never skipped or quarantined as the fix.**
 - **A file that signals a test is written whole:** to a temporary file first, then renamed into place, so a reader never sees half of it.
   An append-only log that a test polls for a whole line, end of line included, is exempt: a partial read only retries.
