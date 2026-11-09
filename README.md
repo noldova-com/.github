@@ -16,6 +16,7 @@ GitHub uses them for every repository of the organization that has no copy of it
 | [.github/workflows/release-npm.yml](.github/workflows/release-npm.yml) | The shared workflow that releases a repository's npm packages to the registry its caller names |
 | [.github/workflows/update-dependents.yml](.github/workflows/update-dependents.yml) | The shared workflow that proposes a released version to the repositories that pin its packages |
 | [.github/workflows/flake-proof.yml](.github/workflows/flake-proof.yml) | The shared workflow that runs a repository's tests many times over, to prove a flaky test fixed or to hunt one |
+| [.github/workflows/docs-image.yml](.github/workflows/docs-image.yml) | The shared workflow that builds a repository's docs site and pushes it as a container image, with the nginx settings in [.github/docs-image/](.github/docs-image) |
 | [.github/workflows/propose-pins.yml](.github/workflows/propose-pins.yml) | This repository's own workflow that proposes each new tag to the repositories that call these workflows |
 | [.github/workflows/versions.yml](.github/workflows/versions.yml) | The Node and npm versions and the runners every shared workflow uses, in one place |
 
@@ -315,6 +316,46 @@ jobs:
 - A test job may take `timeout-minutes`, 120 by default and up to 360, which a caller with a slow suite raises.
 - The jobs install from the registries and run on the runners [Shared settings](#shared-settings) names; a private repository's jobs read the organization's private packages from GitHub's registry with the run's own token, which `packages: read` allows, and a public repository's jobs hand npm no token.
 - The caller grants `contents: read` and `packages: read`, since a called job gets no permission its caller didn't grant.
+
+## Building a docs image
+
+A private repository with a docs site builds it into a container image on each push to main from its own workflow, `.github/workflows/docs.yml`:
+
+```yaml
+name: Docs
+
+on:
+  push:
+    branches: [main]
+
+permissions: {}
+
+jobs:
+  docs:
+    name: Docs
+    uses: noldova-com/.github/.github/workflows/docs-image.yml@<full commit SHA> # <tag>
+    permissions:
+      contents: read
+      packages: write
+    with:
+      build: npm ci && npm run build && npm run docs:build
+      output: _build/docs/browser
+      image: <repository>-docs
+```
+
+- `build` is the bash command that installs the dependencies and builds the site, run from the repository's root with `-euo pipefail`; `output` is the folder it writes the site to, which must hold an `index.html`; `image` is the image's name under the organization on `ghcr.io`, lowercase.
+  `tag` is the tag it is pushed under, the commit's full hash by default; a branch's trial run passes a tag of its own, and nothing deploys by tag.
+- The site job checks out the commit, sets up Node and npm as [Shared settings](#shared-settings) says, runs `build` with no package's install scripts, as [Install scripts](#install-scripts) says, and with the run's token for GitHub's registry only, then keeps the folder as the run's artifact.
+- The image job builds the image without Docker, with [crane](https://github.com/google/go-containerregistry/blob/main/cmd/crane/README.md) `v0.22.1`, which it downloads from its release and checks against the SHA-256 the release's `checksums.txt` gives for `go-containerregistry_Linux_x86_64.tar.gz`; nothing is installed on the runner.
+  It appends one layer onto `nginxinc/nginx-unprivileged` `1.30.6-alpine`, pinned by the digest of its multi-platform index, for `linux/amd64`: the site under `/usr/share/nginx/html/`, and [nginx.conf](.github/docs-image/nginx.conf) and [headers.conf](.github/docs-image/headers.conf) from this repository at the workflow's own commit, under `/etc/nginx/`, so no repository keeps its own copy.
+  The layer's files are root's, readable by all, and dated at the commit's time, so a new commit's files never share an older one's validators.
+- It pushes `ghcr.io/<organization>/<image>:<tag>` with the run's own token, which `packages: write` allows and which goes to `ghcr.io` only, then writes the image, the tag and the digest to the run's summary and to the workflow's `image` and `digest` outputs; whatever deploys the site takes it by that digest.
+- The image runs nginx as user 101 on port 8080, writing only under `/tmp`, so it runs on a read-only root with a writable `/tmp`.
+  It serves each prerendered page at its path, `/a/b` from `/a/b/index.html`, answers 404 for a path with no file, never another page, and answers `GET /healthz` with 200 and `ok`.
+  Every answer carries the headers in `headers.conf`: `Cache-Control`, a year and immutable for a file whose name carries an 8-character content hash, such as `main-ABCD1234.js`, and `no-cache` for the rest; HSTS; a content security policy that limits plugins, the base address, form targets and framing, and leaves scripts and styles alone; `nosniff`; and the referrer policy.
+- Both jobs run on the Linux x64 runner [Shared settings](#shared-settings) names, and the image job checks that it is Linux x64.
+- The caller grants `contents: read` and `packages: write`, since a called job gets no permission its caller didn't grant; the site job keeps only `contents: read` and `packages: read`.
+- A new image package is private; the organization's owners choose whether it is public.
 
 ## Install scripts
 

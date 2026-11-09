@@ -1,0 +1,228 @@
+# @license
+# Copyright (c) Noldova.
+#
+# This source code is licensed under the license found in the
+# LICENSE file in the root directory of this source tree.
+
+name: Docs image
+
+on:
+  workflow_call:
+    inputs:
+      build:
+        description: The bash command that installs the dependencies and builds the docs site, such as 'npm ci && npm run build && npm run docs:build'
+        required: true
+        type: string
+      output:
+        description: The folder the build writes the site to, relative to the repository's root, such as _build/docs/browser
+        required: true
+        type: string
+      image:
+        description: The image's name under the organization on ghcr.io, such as <repository>-docs
+        required: true
+        type: string
+      tag:
+        description: The tag the image is pushed under; empty takes the commit's full hash
+        type: string
+        default: ''
+    outputs:
+      image:
+        description: The image's repository, such as ghcr.io/<organization>/<repository>-docs
+        value: ${{ jobs.image.outputs.image }}
+      digest:
+        description: The pushed image's digest, sha256:<64 hex digits>
+        value: ${{ jobs.image.outputs.digest }}
+
+permissions: {}
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  npm_config_ignore_scripts: 'true'
+  DOCS_OUTPUT: ${{ inputs.output }}
+  DOCS_IMAGE: ${{ inputs.image }}
+  DOCS_TAG: ${{ inputs.tag || github.sha }}
+
+jobs:
+  versions:
+    name: Versions
+    uses: $/.github/workflows/versions.yml
+    permissions: {}
+    with:
+      targets: linux-x64
+
+  site:
+    name: Build the site
+    needs: versions
+    runs-on: ${{ fromJSON(needs.versions.outputs.runs-on-linux-x64) }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: read
+    outputs:
+      epoch: ${{ steps.check.outputs.epoch }}
+    steps:
+      - name: Check the inputs
+        run: |
+          set -euo pipefail
+          if [[ ! "$DOCS_OUTPUT" =~ ^[A-Za-z0-9_][A-Za-z0-9._/-]*$ || "/$DOCS_OUTPUT/" == */../* || "/$DOCS_OUTPUT/" == */./* ]]; then
+            echo "::error::output must be a folder inside the repository, such as _build/docs/browser, not \"$DOCS_OUTPUT\"."
+            exit 1
+          fi
+          if [[ ! "$DOCS_IMAGE" =~ ^[a-z0-9]+([._-][a-z0-9]+)*$ ]]; then
+            echo "::error::image must be a lowercase name such as <repository>-docs, not \"$DOCS_IMAGE\"."
+            exit 1
+          fi
+          if [[ ! "$DOCS_TAG" =~ ^[A-Za-z0-9_][A-Za-z0-9._-]{0,127}$ ]]; then
+            echo "::error::tag must be an image tag of up to 128 letters, digits, '.', '_' and '-', not \"$DOCS_TAG\"."
+            exit 1
+          fi
+
+      - name: Check out the revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js for the organization's packages
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ needs.versions.outputs.node-version }}
+          package-manager-cache: false
+          registry-url: ${{ needs.versions.outputs.install-registry-url }}
+          scope: ${{ needs.versions.outputs.install-scope }}
+
+      - name: Verify the toolchain
+        env:
+          NODE_VERSION: ${{ needs.versions.outputs.node-version }}
+          NPM_VERSION: ${{ needs.versions.outputs.npm-version }}
+        run: |
+          test "$(node --version)" = "v$NODE_VERSION"
+          if [ -n "$NPM_VERSION" ]; then
+            test "$(npm --version)" = "$NPM_VERSION"
+          fi
+
+      - name: Build the site
+        env:
+          DOCS_BUILD: ${{ inputs.build }}
+          NODE_AUTH_TOKEN: ${{ needs.versions.outputs.install-registry-url == 'https://npm.pkg.github.com' && github.token || '' }}
+        run: bash -euo pipefail -c "$DOCS_BUILD"
+
+      - name: Check the site
+        id: check
+        run: |
+          set -euo pipefail
+          if [ -L "$DOCS_OUTPUT" ] || [ ! -f "$DOCS_OUTPUT/index.html" ]; then
+            echo "::error::The build wrote no $DOCS_OUTPUT/index.html."
+            exit 1
+          fi
+          links=$(find "$DOCS_OUTPUT" -type l | head -n 5)
+          if [ -n "$links" ]; then
+            echo "::error::The site holds symbolic links, which the image can't carry: $links"
+            exit 1
+          fi
+          printf 'epoch=%s\n' "$(git log -1 --format=%ct)" >> "$GITHUB_OUTPUT"
+          echo "The site holds $(find "$DOCS_OUTPUT" -type f | wc -l) files, $(du -sh "$DOCS_OUTPUT" | cut -f1) in all."
+
+      - name: Keep the site for the image
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: docs-site
+          path: ${{ inputs.output }}
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: ${{ needs.versions.outputs.retention-days }}
+
+  image:
+    name: Build and push the image
+    needs: [versions, site]
+    runs-on: ${{ fromJSON(needs.versions.outputs.runs-on-linux-x64) }}
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.push.outputs.image }}
+      digest: ${{ steps.push.outputs.digest }}
+    env:
+      CRANE_VERSION: v0.22.1
+      CRANE_SHA256: 0ab7a1d6932a213aed964ce97666c3077fe691c8606413674a8b3e0b9ec4cda0
+      BASE_IMAGE: index.docker.io/nginxinc/nginx-unprivileged@sha256:f5116ed4606f3eb015dd4a8e28cb9b351476dc0ad4bc6e9f93b19cec130cdf03
+      BASE_VERSION: 1.30.6-alpine
+      PLATFORM: linux/amd64
+      SOURCE_DATE_EPOCH: ${{ needs.site.outputs.epoch }}
+    steps:
+      - name: Check out the shared nginx settings
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: docs-image-settings
+          sparse-checkout: .github/docs-image
+          persist-credentials: false
+
+      - name: Download crane
+        run: |
+          set -euo pipefail
+          if [ "$(uname -s)-$(uname -m)" != Linux-x86_64 ]; then
+            echo "::error::The image job needs a Linux x64 runner, not $(uname -s) $(uname -m)."
+            exit 1
+          fi
+          folder="$RUNNER_TEMP/crane"
+          mkdir -p "$folder"
+          curl --fail --silent --show-error --location --retry 3 --proto '=https' --output "$folder/crane.tar.gz" \
+            "https://github.com/google/go-containerregistry/releases/download/$CRANE_VERSION/go-containerregistry_Linux_x86_64.tar.gz"
+          echo "$CRANE_SHA256  $folder/crane.tar.gz" | sha256sum --check --strict
+          tar --extract --gzip --file "$folder/crane.tar.gz" --directory "$folder" crane
+          echo "$folder" >> "$GITHUB_PATH"
+          "$folder/crane" version
+
+      - name: Take the site
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: docs-site
+          path: ${{ runner.temp }}/docs-layer/usr/share/nginx/html
+
+      - name: Pack the layer
+        run: |
+          set -euo pipefail
+          if [[ ! "$SOURCE_DATE_EPOCH" =~ ^[0-9]+$ ]]; then
+            echo "::error::The site job gave no commit time, \"$SOURCE_DATE_EPOCH\"."
+            exit 1
+          fi
+          layer="$RUNNER_TEMP/docs-layer"
+          mkdir -p "$layer/etc/nginx"
+          cp docs-image-settings/.github/docs-image/nginx.conf docs-image-settings/.github/docs-image/headers.conf "$layer/etc/nginx/"
+          tar --create --file "$RUNNER_TEMP/docs-layer.tar" --directory "$layer" --sort=name --format=pax \
+            --pax-option=exthdr.name=%d/PaxHeaders/%f,delete=atime,delete=ctime \
+            --owner=0 --group=0 --numeric-owner --mode='u=rwX,go=rX' --mtime="@$SOURCE_DATE_EPOCH" \
+            usr/share/nginx/html etc/nginx/nginx.conf etc/nginx/headers.conf
+          echo "The layer is $(du -h "$RUNNER_TEMP/docs-layer.tar" | cut -f1)."
+
+      - name: Push the image
+        id: push
+        env:
+          REGISTRY_TOKEN: ${{ github.token }}
+          DOCKER_CONFIG: ${{ runner.temp }}/docs-registry
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
+          image="ghcr.io/${OWNER,,}/$DOCS_IMAGE"
+          printf '%s' "$REGISTRY_TOKEN" | crane auth login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          crane append --platform "$PLATFORM" --base "$BASE_IMAGE" --new_layer "$RUNNER_TEMP/docs-layer.tar" --new_tag "$image:$DOCS_TAG"
+          digest=$(crane digest "$image:$DOCS_TAG")
+          crane auth logout ghcr.io
+          if [[ ! "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::The registry gave no digest for $image:$DOCS_TAG, \"$digest\"."
+            exit 1
+          fi
+          printf 'image=%s\ndigest=%s\n' "$image" "$digest" >> "$GITHUB_OUTPUT"
+          {
+            echo '### Docs image'
+            echo
+            echo '| Image | Tag | Digest | Base |'
+            echo '|---|---|---|---|'
+            echo "| \`$image\` | \`$DOCS_TAG\` | \`$digest\` | nginx-unprivileged $BASE_VERSION, $PLATFORM |"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "Pushed $image:$DOCS_TAG as $digest."
