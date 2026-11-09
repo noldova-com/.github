@@ -111,7 +111,7 @@ The rules below make it concrete, and go further where a product needs more.
 
 - Operable text, placeholders, tooltips and informative secondary text meet at least 4.5:1 contrast at normal sizes; large text at least 3:1 ([text contrast](https://www.w3.org/WAI/WCAG22/Understanding/contrast-minimum.html)).
   Measure the composited pair in every relevant state, such as hover, selection and overlays, and correct the mapping where it fails.
-  A terminal's stored ANSI colors may keep the earlier terminal's values below this, as long as the terminal sets xterm's `minimumContrastRatio` to 4.5, so every color it draws meets 4.5:1 on screen.
+  A terminal's stored ANSI colors may sit below this, as long as the terminal sets xterm's `minimumContrastRatio` to 4.5, so every color it draws meets 4.5:1 on screen.
 - Essential control boundaries, state indicators and focus cues meet at least 3:1 against adjacent colors ([non-text contrast](https://www.w3.org/WAI/WCAG22/Understanding/non-text-contrast.html)).
   Decorative separators do not substitute for an identifiable control.
   Until the first public release has shipped, a selected fill (rows, tabs and choice pills) or a keyboard-active fill is a stated exception: it needs no 3:1 against its surface, since the part's semantics convey the state, and a second, subtle visual cue follows after the release.

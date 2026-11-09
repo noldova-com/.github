@@ -14,8 +14,9 @@ Code comments and API documentation are owned by [CODE.md](CODE.md#comments-and-
   A document that grows a second subject is split, so each stays readable on its own.
 - When a requirement changes, update its owning document.
   Remove contradictions; superseded rationale stays in Git history.
-- Code and documents say what is, never what was: no "earlier", "no longer" or "was", no migration notes and no dated notes.
-  History lives in Git, the changelog and the release notes.
+- Code and documents say what is, never how it changed or what it said before: no "formerly", "earlier", "no longer", "used to" or "now" set against a past state, no migration notes and no dated notes.
+  Past tense that describes behavior, and a decision's date, are what is.
+  History lives in Git, pull requests, the changelog and the release notes.
 - Record reusable decisions in their owning documents, and apply accepted corrections to similar work in scope.
 - Copied proposals and historical references do not become requirements.
 
