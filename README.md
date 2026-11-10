@@ -148,7 +148,7 @@ jobs:
 - Without a `registry-token` secret, GitHub's registry takes the run's own token, and npm's registry takes trusted publishing: the package's trusted publisher names the calling repository, its `release-npm.yml` and its environment, and npm records the run as the version's provenance.
 - Another registry passes its token with `secrets: registry-token: ${{ secrets.<name> }}`, which may name a secret that only the caller's environment holds.
 - A new package's first publish to npm's registry can't use trusted publishing, since the package doesn't exist yet: the caller passes a one-time token held only in its environment, the same way, and removes the secret after the first publish, so the line resolves to empty and trusted publishing takes over.
-  A public repository's packages on npm's registry get provenance either way.
+  A public repository's packages on npm's registry get provenance either way, as [Verifying a release](#verifying-a-release) says.
 - The caller grants `contents: write`, `packages: write` and `id-token: write`, whichever registry it publishes to, since a called job gets no permission its caller didn't grant.
 - The publish job runs in the caller's environment, which an environment that needs approval approves; an environment name that doesn't exist yet is created on first use, with no protection.
   The prune job runs in the caller's `updates-environment`, with no approval of its own: the publish approval covers its deletes, and it deletes only versions no repository locks.
@@ -178,6 +178,25 @@ A package that ships a native addon declares it in its `package.json`, anywhere 
 - The repository's build puts each build in its package at `native/<platform>-<arch>/<name>.node`, and fails when a declared target's build is missing; its own code loads `native/${process.platform}-${process.arch}/<name>.node`.
 - After the build, the release refuses an archive that lacks any of its addons' builds for any target, naming the package, the addon and the target.
 - The addon jobs run on the x64 runners of Linux, macOS and Windows that [Shared settings](#shared-settings) names, and need the organization's own runners, which hold the sysroots: a private repository with `RUNNER_TYPE` set to `GITHUB` passes its own runners with `runs-on-<system>-x64`, and a public repository can't release a package with addons yet: the plan job refuses it.
+
+### Verifying a release
+
+A public repository's packages on npm's registry carry npm's [provenance](https://docs.npmjs.com/generating-provenance-statements): a statement, signed with Sigstore's public instance and recorded in its public log, of the repository, workflow and run that built and published each version, and of the run's commit.
+
+- The publish job sets `npm_config_provenance` only when the calling repository is public and the registry is npm's, so `npm publish` makes the statement; npm refuses provenance from a private repository, and GitHub's registry keeps none, so a private repository's or GitHub's registry's packages carry none.
+- The publish job is the only job with `id-token: write`, which signs the statement and, for trusted publishing, stands in for a token; GitHub grants permissions per job, not per step.
+- The statement names the calling repository, the caller's release workflow, its run, and the run's commit, `GITHUB_SHA`: main's head when the release started, not `commit`, the commit the release builds, whenever main has moved since `commit`.
+  The commit built is the one the version's tag, `v<version>`, names, which the tag job checks is on main and holds the version.
+
+Anyone verifies a version:
+
+- On npmjs.com, the version's page shows a provenance badge, linking to the run that built it and the run's commit; the version's tag names the commit built.
+- `npm audit signatures`, run where the package is installed, checks every installed package's registry signature and, for each one that has provenance, its statement, and fails when one doesn't verify:
+
+```
+npm install @noldova/<package>@<version>
+npm audit signatures
+```
 
 ## Updating dependents
 
