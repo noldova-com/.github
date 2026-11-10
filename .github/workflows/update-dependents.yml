@@ -101,6 +101,12 @@ jobs:
           npm install --prefix "$RUNNER_TEMP/pipelines-tool" --registry https://registry.npmjs.org/ --no-audit --no-fund "$PIPELINES_TOOL"
           echo "$RUNNER_TEMP/pipelines-tool/node_modules/.bin" >> "$GITHUB_PATH"
 
+      - name: Check the toolchain
+        env:
+          NODE_VERSION: ${{ needs.versions.outputs.node-version }}
+          NPM_VERSION: ${{ needs.versions.outputs.npm-version }}
+        run: pipelines toolchain "$NODE_VERSION" $NPM_VERSION
+
       - name: Check that the App's key is passed
         env:
           APP_KEY: ${{ secrets.VERSION_UPDATES_APP_KEY }}
