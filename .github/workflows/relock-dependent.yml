@@ -1,0 +1,157 @@
+# @license
+# Copyright (c) Noldova.
+#
+# This source code is licensed under the license found in the
+# LICENSE file in the root directory of this source tree.
+
+name: Relock dependent
+
+on:
+  workflow_call:
+    inputs:
+      commit:
+        description: The full hash of the commit to relock, the head of the releasing repository's checkout of this repository
+        required: true
+        type: string
+      request:
+        description: The release, as the dependents step sends it
+        required: true
+        type: string
+      install:
+        description: Whether to run npm ci at the root before the prepare scripts
+        type: boolean
+        default: true
+      prepare-scripts:
+        description: The npm scripts that prepare the checkout as the repository's own build does, in order, separated by spaces or lines, such as install:root postinstall build
+        type: string
+        default: ''
+      lock-scripts:
+        description: The lock files the repository relocks with its own npm script, as <lock file>=<npm script>, separated by spaces or lines, such as app/package-lock.json=lock:app
+        type: string
+        default: ''
+      node-version:
+        description: Overrides the Node version versions.yml names, such as 24.21.0
+        type: string
+        default: ''
+      npm-version:
+        description: Overrides the npm version versions.yml names, such as 11.19.0
+        type: string
+        default: ''
+      install-registry-url:
+        description: Overrides the registry versions.yml names for installing the scope's packages, such as https://npm.pkg.github.com
+        type: string
+        default: ''
+      install-scope:
+        description: Overrides the scope versions.yml names for that registry, such as @noldova-com
+        type: string
+        default: ''
+      runs-on-linux-x64:
+        description: Overrides the Linux x64 runner, as the JSON runs-on takes
+        type: string
+        default: ''
+
+permissions: {}
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  npm_config_ignore_scripts: 'true'
+  PIPELINES_TOOL: '@noldova/tools.pipelines.github@0.0.18'
+
+jobs:
+  versions:
+    name: Versions
+    uses: ./.github/workflows/versions.yml
+    permissions: {}
+    with:
+      targets: linux-x64
+      node-version: ${{ inputs.node-version }}
+      npm-version: ${{ inputs.npm-version }}
+      install-registry-url: ${{ inputs.install-registry-url }}
+      install-scope: ${{ inputs.install-scope }}
+      runs-on-linux-x64: ${{ inputs.runs-on-linux-x64 }}
+
+  relock:
+    name: Relock for the release
+    needs: versions
+    runs-on: ${{ fromJSON(needs.versions.outputs.runs-on-linux-x64) }}
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Check the commit
+        env:
+          COMMIT: ${{ inputs.commit }}
+        run: |
+          if ! [[ "$COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::The commit input isn't a full commit hash."
+            exit 1
+          fi
+
+      - name: Check out the commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.commit }}
+          persist-credentials: false
+
+      - name: Set up Node.js for the organization's packages
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ needs.versions.outputs.node-version }}
+          package-manager-cache: false
+          registry-url: ${{ needs.versions.outputs.install-registry-url }}
+          scope: ${{ needs.versions.outputs.install-scope }}
+
+      - name: Install the pipelines tool
+        env:
+          NPM_CONFIG_USERCONFIG: ${{ runner.temp }}/pipelines-tool.npmrc
+        run: |
+          npm install --prefix "$RUNNER_TEMP/pipelines-tool" --registry https://registry.npmjs.org/ --no-audit --no-fund "$PIPELINES_TOOL"
+          echo "$RUNNER_TEMP/pipelines-tool/node_modules/.bin" >> "$GITHUB_PATH"
+
+      - name: Check the toolchain
+        env:
+          NODE_VERSION: ${{ needs.versions.outputs.node-version }}
+          NPM_VERSION: ${{ needs.versions.outputs.npm-version }}
+        run: pipelines toolchain "$NODE_VERSION" $NPM_VERSION
+
+      - name: Install the locked packages
+        if: inputs.install
+        env:
+          NODE_AUTH_TOKEN: ${{ needs.versions.outputs.install-registry-url == 'https://npm.pkg.github.com' && github.token || '' }}
+        run: npm ci --no-audit --no-fund
+
+      - name: Prepare the checkout
+        env:
+          NODE_AUTH_TOKEN: ${{ needs.versions.outputs.install-registry-url == 'https://npm.pkg.github.com' && github.token || '' }}
+          PREPARE_SCRIPTS: ${{ inputs.prepare-scripts }}
+        run: |
+          read -ra scripts -d '' <<< "$PREPARE_SCRIPTS" || true
+          for script in "${scripts[@]}"; do
+            if ! [[ "$script" =~ ^[A-Za-z0-9][A-Za-z0-9:._-]*$ ]]; then
+              echo "::error::$script isn't an npm script name."
+              exit 1
+            fi
+            npm run "$script"
+          done
+
+      - name: Relock
+        env:
+          NODE_AUTH_TOKEN: ${{ needs.versions.outputs.install-registry-url == 'https://npm.pkg.github.com' && github.token || '' }}
+          REQUEST: ${{ inputs.request }}
+          LOCK_SCRIPTS: ${{ inputs.lock-scripts }}
+        run: |
+          read -ra locks -d '' <<< "$LOCK_SCRIPTS" || true
+          mkdir "$RUNNER_TEMP/relock"
+          pipelines relock "$GITHUB_REPOSITORY" "$REQUEST" "$RUNNER_TEMP/relock/relock.json" "${locks[@]}"
+
+      - name: Upload the result
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: relock
+          path: ${{ runner.temp }}/relock/relock.json
+          if-no-files-found: error
+          retention-days: 1

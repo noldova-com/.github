@@ -52,7 +52,7 @@ env:
   npm_config_ignore_scripts: 'true'
   RELEASE_VERSION: ${{ inputs.version }}
   RELEASE_COMMIT: ${{ inputs.commit }}
-  PIPELINES_TOOL: '@noldova/tools.pipelines.github@0.0.17'
+  PIPELINES_TOOL: '@noldova/tools.pipelines.github@0.0.18'
 
 jobs:
   versions:
@@ -71,7 +71,7 @@ jobs:
     name: Propose the version to the repositories that pin it
     needs: versions
     runs-on: ${{ fromJSON(needs.versions.outputs.runs-on-linux-x64) }}
-    timeout-minutes: 30
+    timeout-minutes: 45
     environment: ${{ inputs.environment }}
     concurrency:
       group: update-dependents-${{ github.repository }}
@@ -118,6 +118,7 @@ jobs:
           client-id: ${{ vars.VERSION_UPDATES_CLIENT_ID }}
           private-key: ${{ secrets.VERSION_UPDATES_APP_KEY }}
           owner: ${{ github.repository_owner }}
+          permission-actions: write
           permission-contents: write
           permission-issues: write
           permission-metadata: read
