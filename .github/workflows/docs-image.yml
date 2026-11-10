@@ -25,6 +25,14 @@ on:
         description: The tag the image is pushed under; empty takes the commit's full hash
         type: string
         default: ''
+      nginx:
+        description: A folder in the repository laid out as /etc/nginx/, such as deploy/nginx, whose files go there in place of the shared nginx.conf and headers.conf; it must hold nginx.conf; empty keeps the shared ones
+        type: string
+        default: ''
+      env:
+        description: Plain configuration values the image starts with, one NAME=value a line, such as SITE_NOINDEX=off; never a secret, since they are readable by anyone who can pull the image; empty sets none
+        type: string
+        default: ''
     outputs:
       image:
         description: The image's repository, such as ghcr.io/<organization>/<repository>-docs
@@ -44,6 +52,8 @@ env:
   DOCS_OUTPUT: ${{ inputs.output }}
   DOCS_IMAGE: ${{ inputs.image }}
   DOCS_TAG: ${{ inputs.tag || github.sha }}
+  DOCS_NGINX: ${{ inputs.nginx }}
+  DOCS_ENV: ${{ inputs.env }}
 
 jobs:
   versions:
@@ -79,6 +89,26 @@ jobs:
             echo "::error::tag must be an image tag of up to 128 letters, digits, '.', '_' and '-', not \"$DOCS_TAG\"."
             exit 1
           fi
+          if [ -n "$DOCS_NGINX" ] && [[ ! "$DOCS_NGINX" =~ ^[A-Za-z0-9_][A-Za-z0-9._/-]*$ || "/$DOCS_NGINX/" == */../* || "/$DOCS_NGINX/" == */./* ]]; then
+            echo "::error::nginx must be a folder inside the repository, such as deploy/nginx, not \"$DOCS_NGINX\"."
+            exit 1
+          fi
+          declare -A names=()
+          while IFS= read -r line; do
+            if [ -z "$line" ]; then
+              continue
+            fi
+            if [[ ! "$line" =~ ^[A-Za-z_][A-Za-z0-9_]*=[[:print:]]*$ ]]; then
+              echo "::error::Each line of env must be NAME=value, a name of letters, digits and '_', not \"$line\"."
+              exit 1
+            fi
+            name=${line%%=*}
+            if [ -n "${names[$name]+set}" ]; then
+              echo "::error::env names $name twice."
+              exit 1
+            fi
+            names[$name]=1
+          done <<< "$DOCS_ENV"
 
       - name: Check out the revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -113,6 +143,14 @@ jobs:
         id: check
         run: |
           set -euo pipefail
+          workspace=$(realpath -e -- "$GITHUB_WORKSPACE")
+          for folder in "$DOCS_OUTPUT" ${DOCS_NGINX:+"$DOCS_NGINX"}; do
+            real=$(realpath -e -- "$folder" 2> /dev/null || true)
+            if [ -z "$real" ] || [ "$real" = "$workspace" ] || [[ "$real" != "$workspace"/* ]]; then
+              echo "::error::$folder must be a folder inside the checkout, but it resolves to \"${real:-nothing}\"."
+              exit 1
+            fi
+          done
           if [ -L "$DOCS_OUTPUT" ] || [ ! -f "$DOCS_OUTPUT/index.html" ]; then
             echo "::error::The build wrote no $DOCS_OUTPUT/index.html."
             exit 1
@@ -122,6 +160,17 @@ jobs:
             echo "::error::The site holds symbolic links, which the image can't carry: $links"
             exit 1
           fi
+          if [ -n "$DOCS_NGINX" ]; then
+            if [ -L "$DOCS_NGINX" ] || [ -L "$DOCS_NGINX/nginx.conf" ] || [ ! -f "$DOCS_NGINX/nginx.conf" ]; then
+              echo "::error::The nginx folder $DOCS_NGINX holds no nginx.conf."
+              exit 1
+            fi
+            others=$(find "$DOCS_NGINX" -mindepth 1 ! -type f ! -type d | head -n 5)
+            if [ -n "$others" ]; then
+              echo "::error::The nginx folder may hold only files and folders, which the image carries: $others"
+              exit 1
+            fi
+          fi
           printf 'epoch=%s\n' "$(git log -1 --format=%ct)" >> "$GITHUB_OUTPUT"
           echo "The site holds $(find "$DOCS_OUTPUT" -type f | wc -l) files, $(du -sh "$DOCS_OUTPUT" | cut -f1) in all."
 
@@ -130,6 +179,16 @@ jobs:
         with:
           name: docs-site
           path: ${{ inputs.output }}
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: ${{ needs.versions.outputs.retention-days }}
+
+      - name: Keep the nginx settings for the image
+        if: inputs.nginx != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: docs-nginx
+          path: ${{ inputs.nginx }}
           if-no-files-found: error
           include-hidden-files: true
           retention-days: ${{ needs.versions.outputs.retention-days }}
@@ -154,6 +213,7 @@ jobs:
       SOURCE_DATE_EPOCH: ${{ needs.site.outputs.epoch }}
     steps:
       - name: Check out the shared nginx settings
+        if: inputs.nginx == ''
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ${{ job.workflow_repository }}
@@ -184,6 +244,13 @@ jobs:
           name: docs-site
           path: ${{ runner.temp }}/docs-layer/usr/share/nginx/html
 
+      - name: Take the repository's nginx settings
+        if: inputs.nginx != ''
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: docs-nginx
+          path: ${{ runner.temp }}/docs-layer/etc/nginx
+
       - name: Pack the layer
         run: |
           set -euo pipefail
@@ -192,12 +259,21 @@ jobs:
             exit 1
           fi
           layer="$RUNNER_TEMP/docs-layer"
-          mkdir -p "$layer/etc/nginx"
-          cp docs-image-settings/.github/docs-image/nginx.conf docs-image-settings/.github/docs-image/headers.conf "$layer/etc/nginx/"
+          if [ -z "$DOCS_NGINX" ]; then
+            mkdir -p "$layer/etc/nginx"
+            cp docs-image-settings/.github/docs-image/nginx.conf docs-image-settings/.github/docs-image/headers.conf "$layer/etc/nginx/"
+            settings=(etc/nginx/nginx.conf etc/nginx/headers.conf)
+          else
+            if [ ! -f "$layer/etc/nginx/nginx.conf" ]; then
+              echo "::error::The repository's nginx settings arrived without nginx.conf."
+              exit 1
+            fi
+            mapfile -t settings < <(cd "$layer" && find etc/nginx -mindepth 1 | LC_ALL=C sort)
+          fi
           tar --create --file "$RUNNER_TEMP/docs-layer.tar" --directory "$layer" --sort=name --format=pax \
             --pax-option=exthdr.name=%d/PaxHeaders/%f,delete=atime,delete=ctime \
             --owner=0 --group=0 --numeric-owner --mode='u=rwX,go=rX' --mtime="@$SOURCE_DATE_EPOCH" \
-            usr/share/nginx/html etc/nginx/nginx.conf etc/nginx/headers.conf
+            usr/share/nginx/html --no-recursion "${settings[@]}"
           echo "The layer is $(du -h "$RUNNER_TEMP/docs-layer.tar" | cut -f1)."
 
       - name: Push the image
@@ -211,6 +287,15 @@ jobs:
           image="ghcr.io/${OWNER,,}/$DOCS_IMAGE"
           printf '%s' "$REGISTRY_TOKEN" | crane auth login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
           crane append --platform "$PLATFORM" --base "$BASE_IMAGE" --new_layer "$RUNNER_TEMP/docs-layer.tar" --new_tag "$image:$DOCS_TAG"
+          variables=()
+          while IFS= read -r line; do
+            if [ -n "$line" ]; then
+              variables+=(--env "$line")
+            fi
+          done <<< "$DOCS_ENV"
+          if [ "${#variables[@]}" -gt 0 ]; then
+            crane mutate "$image:$DOCS_TAG" "${variables[@]}" --tag "$image:$DOCS_TAG"
+          fi
           digest=$(crane digest "$image:$DOCS_TAG")
           crane auth logout ghcr.io
           if [[ ! "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
