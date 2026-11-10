@@ -74,7 +74,7 @@ defaults:
 
 env:
   npm_config_ignore_scripts: 'true'
-  PIPELINES_TOOL: '@noldova/tools.pipelines.github@0.0.17'
+  PIPELINES_TOOL: '@noldova/tools.pipelines.github@0.0.18'
 
 jobs:
   versions:
