@@ -431,10 +431,47 @@ jobs:
           if-no-files-found: error
           retention-days: ${{ needs.versions.outputs.retention-days }}
 
-  publish:
-    name: Publish to the registry
+  attest:
+    name: Attest the archives
     needs: [versions, build]
     if: ${{ !cancelled() && needs.build.result == 'success' }}
+    runs-on: ${{ fromJSON(needs.versions.outputs.runs-on-linux-x64) }}
+    timeout-minutes: 10
+    permissions:
+      id-token: write
+      attestations: write
+    steps:
+      - name: Take the checked archives
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: archives
+          path: _packages
+
+      - name: Attest the archives
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: _packages/*.tgz
+
+      - name: Say how to verify the archives
+        env:
+          SIGNER_WORKFLOW: ${{ job.workflow_repository }}/.github/workflows/release-npm.yml
+        run: |
+          {
+            echo '### Verifying the archives'
+            echo
+            echo 'Each archive, as `npm pack <package>@<version>` downloads it, verifies with:'
+            echo
+            echo '```'
+            for archive in _packages/*.tgz; do
+              echo "gh attestation verify ${archive#_packages/} --repo $GITHUB_REPOSITORY --signer-workflow $SIGNER_WORKFLOW"
+            done
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  publish:
+    name: Publish to the registry
+    needs: [versions, build, attest]
+    if: ${{ !cancelled() && needs.build.result == 'success' && needs.attest.result == 'success' }}
     runs-on: ${{ fromJSON(needs.versions.outputs.runs-on-linux-x64) }}
     timeout-minutes: 20
     env: *release-registry
