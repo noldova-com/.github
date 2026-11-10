@@ -15,6 +15,7 @@ A flaky test is a bug: file it, fix its cause, and never rerun a check to make i
   No test waits longer than the event it needs.
 - **Parallel:** any two tests can run at the same time.
   Tests share no ports, files, folders, processes or global state, and nothing runs serially; a test that needs global state gets its own process.
+  A service the run starts once, such as a database server, is not a shared process or port when each test gets its own isolated part of it, such as its own schema or database, and no test sees another's data.
   There are two exceptions.
   An operating-system resource that a platform can't isolate per process, such as the system clipboard or foreground focus on Windows and macOS: tests that need it run last, one at a time, and the repository's README lists each by name in its Checks section.
   A test of a deadline no event can reach, in a public test helper, may fake a timer the spec files share, as [Execution and isolation](#execution-and-isolation) allows.
