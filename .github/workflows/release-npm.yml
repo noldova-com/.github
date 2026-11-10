@@ -134,10 +134,10 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Check that the run started at the commit
+      - name: Check that the run started on main at the commit
         run: |
-          if [ "$GITHUB_SHA" != "$RELEASE_COMMIT" ]; then
-            echo "::error::The run started at $GITHUB_SHA, not at the commit to release, $RELEASE_COMMIT, so nothing is tagged, built or published: a release always builds the commit its run started at, main's head. Release main's head, with the version its version.json holds."
+          if [ "$GITHUB_REF" != refs/heads/main ] || [ "$GITHUB_SHA" != "$RELEASE_COMMIT" ]; then
+            echo "::error::The run started on $GITHUB_REF at $GITHUB_SHA, not on refs/heads/main at the commit to release, $RELEASE_COMMIT, so nothing is tagged, built or published: a release always builds main's head, from a run started on main. Release main's head from main, with the version its version.json holds."
             exit 1
           fi
 
