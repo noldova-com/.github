@@ -179,5 +179,8 @@ tests/services/snapshot-tracker.test.ts
 ## Dependencies
 
 - External dependency versions are exact pins from the registry, never ranges, tags, aliases, paths, Git or URL sources.
+- A published package's peer on another of the organization's packages is a range, `>=<lowest> <first refused>`, both exact versions, so an app takes a new release of one package without every package between them releasing again: the lowest is the version the package builds and tests with, its own exact development pin, raised only when it starts to use something newer; the first refused is the next minor below 1.0, such as `<0.1.0` for any 0.0.x, and the next major from 1.0.
+  No other form is taken: no caret, tilde, `*`, `x`, `||` or prerelease; every other version, `dependencies`, `devDependencies` and the lockfile included, stays an exact pin.
+- A package with such a range is built and tested against the newest published version inside it at least nightly, and a failure opens or updates an issue.
 - Each folder with a lockfile keeps `save-exact=true` in its `.npmrc`.
 - A shipped package's third-party runtime dependency is pinned at the same version in the manifest of the folder that installs it, usually the repository's root, and locked at it in that folder's lockfile.
