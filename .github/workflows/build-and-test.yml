@@ -133,7 +133,7 @@ jobs:
             script="$RUNNER_TEMP\dev-drive.txt"
             printf '%s\r\n' "create vdisk file=\"$vhd\" maximum=20480 type=expandable" "select vdisk file=\"$vhd\"" 'attach vdisk' 'convert gpt' 'create partition primary' 'assign letter=R' > "$script"
             diskpart /s "$script"
-            echo Y | format R: /DevDrv /Q /V:DevDrive /Y
+            echo Y | format.com R: /DevDrv /Q /V:DevDrive /Y
             fsutil devdrv query R:
             root='R:'
           fi
