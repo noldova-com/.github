@@ -120,6 +120,26 @@ jobs:
           registry-url: ${{ needs.versions.outputs.install-registry-url }}
           scope: ${{ needs.versions.outputs.install-scope }}
 
+      - name: Move npm's temporary files and cache off the system disk
+        if: runner.os == 'Windows' && runner.environment == 'github-hosted'
+        shell: pwsh
+        run: |
+          if ($env:RUNNER_ARCH -eq 'X64') {
+            $root = $env:RUNNER_TEMP
+          } else {
+            $vhd = Join-Path $env:RUNNER_TEMP 'dev-drive.vhdx'
+            $script = Join-Path $env:RUNNER_TEMP 'dev-drive.txt'
+            Set-Content $script @("create vdisk file=`"$vhd`" maximum=20480 type=expandable", "select vdisk file=`"$vhd`"", 'attach vdisk', 'convert gpt', 'create partition primary', 'assign letter=R')
+            diskpart /s $script
+            if ($LASTEXITCODE -ne 0) { exit 1 }
+            Format-Volume -DriveLetter R -DevDrive -Confirm:$false -Force | Out-Null
+            $root = 'R:\'
+          }
+          $tmp = Join-Path $root 'tmp'
+          $cache = Join-Path $root 'npm-cache'
+          New-Item -ItemType Directory -Force $tmp, $cache | Out-Null
+          "TEMP=$tmp", "TMP=$tmp", "npm_config_cache=$cache" | Add-Content $env:GITHUB_ENV
+
       - name: Build the packages
         env:
           NODE_AUTH_TOKEN: ${{ needs.versions.outputs.install-registry-url == 'https://npm.pkg.github.com' && github.token || '' }}
