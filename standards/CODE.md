@@ -190,7 +190,7 @@ Code that no input can reach is removed, not covered: needing a deliberately bro
   Standalone automation uses the project's language for builds, tests, packaging, generation, fixtures and developer tools; no other-language scripts or wrappers.
 - Keep runnable entry points and bootstrap configuration directly in `scripts/`; group supporting implementations by responsibility.
 - A repository holds no PowerShell, `cmd` or batch files: its scripts are in the project's language, and every shell step, such as a workflow's `run:`, is Bash.
-  A project may grant a named exception for a test fixture that is itself the program under test, listing it with its reason in its own documents.
+  A project may grant a named exception, listing it with its reason in its own documents, for a test fixture that is itself the program under test, or for a script that reaches an operating-system facility the project's language can't reach without a native package.
 - Workflows never encode machine-specific paths.
 - Every entry point works from a clean clone on every supported platform; no globally installed tool is an unstated prerequisite.
 - Builds and tests leave tracked files unchanged and write only to their declared output folders.
