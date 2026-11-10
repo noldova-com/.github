@@ -242,7 +242,8 @@ jobs:
       lock-scripts: app/package-lock.json=lock:app
 ```
 
-- The job checks out the commit, runs `npm ci` unless `install` is `false`, then each npm script `prepare-scripts` names, in order, as the repository's own build does, and runs `pipelines relock` from the same tool, at the version `PIPELINES_TOOL` names; its README says what the step moves and writes.
+- The job checks out the commit, checks the Node and npm versions with `pipelines toolchain`, as [Building and testing](#building-and-testing) does, runs `npm ci` unless `install` is `false`, then each npm script `prepare-scripts` names, in order, as the repository's own build does, and runs `pipelines relock` from the same tool, at the version `PIPELINES_TOOL` names; its README says what the step moves and writes.
+- `prepare-scripts` and `lock-scripts` take their values separated by spaces or lines, so a YAML `|` block works too.
 - `lock-scripts` names each lock file the repository relocks with its own npm script, as `<lock file>=<npm script>` instead of npm's own relock; the other tracked lock files are relocked as the step's README says.
 - The result is the run's artifact `relock`, kept one day, which the dependents step reads; the run pushes nothing, and its token only reads the repository's contents and packages.
 - The run builds the repository's own code at the commit it is given, as its own checks do, so only those who may start its workflows can start it; the commit must be a full hash.
