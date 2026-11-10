@@ -137,7 +137,7 @@ jobs:
       - name: Check that the run started at the commit
         run: |
           if [ "$GITHUB_SHA" != "$RELEASE_COMMIT" ]; then
-            echo "::error::The run started at $GITHUB_SHA, not at the commit to release, $RELEASE_COMMIT, so nothing is tagged, built or published: npm's provenance names the run's commit. Release main's head as its commit, or start the release from a branch whose head is the commit."
+            echo "::error::The run started at $GITHUB_SHA, not at the commit to release, $RELEASE_COMMIT, so nothing is tagged, built or published: a release always builds the commit its run started at, main's head. Release main's head, with the version its version.json holds."
             exit 1
           fi
 
