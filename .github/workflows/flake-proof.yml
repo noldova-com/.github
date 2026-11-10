@@ -38,6 +38,10 @@ on:
         description: Runs each run on Linux under a virtual display and a session bus, for a test that opens windows
         type: boolean
         default: false
+      reports:
+        description: The folders in the checkout the script writes its report and results to, separated by spaces, such as _build/ui/report _build/ui/results; each run's go to the artifact
+        type: string
+        default: ''
       runs:
         description: Runs in total per target, 1 to 200
         type: string
@@ -140,8 +144,16 @@ jobs:
           JOBS: ${{ inputs.jobs }}
           TIMEOUT: ${{ inputs.timeout-minutes }}
           TARGETS: ${{ inputs.targets }}
+          REPORTS: ${{ inputs.reports }}
         run: |
           set -euo pipefail
+          read -ra reports <<< "$REPORTS"
+          for folder in ${reports[@]+"${reports[@]}"}; do
+            if [[ ! "$folder" =~ ^[A-Za-z0-9_][A-Za-z0-9._/-]*$ || "/$folder/" == */../* || "/$folder/" == */./* || "/$folder/" == /_build/flake-proof/* ]]; then
+              echo "::error::Each of reports must be a folder inside the checkout, outside _build/flake-proof, such as _build/ui/report, not \"$folder\"."
+              exit 1
+            fi
+          done
           if ! [[ "$RUNS" =~ ^[0-9]+$ ]] || [ "$RUNS" -lt 1 ] || [ "$RUNS" -gt 200 ]; then
             echo "::error::runs must be a whole number from 1 to 200."
             exit 1
@@ -264,12 +276,14 @@ jobs:
           FILTER: ${{ inputs.filter }}
           SCRIPT: ${{ inputs.script }}
           VIRTUAL_DISPLAY: ${{ inputs.display }}
+          REPORTS: ${{ inputs.reports }}
           RUNS: ${{ matrix.runs }}
           TARGET: ${{ matrix.target }}
           JOB: ${{ matrix.job }}
         run: |
           set -uo pipefail
           read -r -a filters <<< "$FILTER"
+          read -r -a reports <<< "$REPORTS"
           command=(npm run "$SCRIPT" -- ${filters[@]+"${filters[@]}"})
           keyring=false
           if [ "$VIRTUAL_DISPLAY" = true ] && [ "$RUNNER_OS" = Linux ]; then
@@ -290,13 +304,18 @@ jobs:
             fi
             if "${command[@]}" > "$log" 2>&1; then
               passed=$(( passed + 1 ))
-              rm "$log"
               echo "Run $run passed."
             else
               failed=$(( failed + 1 ))
               echo "::error::Run $run failed; its log is kept in the job's artifact."
               tail -n 60 "$log"
             fi
+            for folder in ${reports[@]+"${reports[@]}"}; do
+              if [ -e "$folder" ]; then
+                mkdir -p "_build/flake-proof/run-$run/$(dirname "$folder")"
+                mv "$folder" "_build/flake-proof/run-$run/$folder"
+              fi
+            done
           done
           {
             echo '| Target | Job | Runs | Passed | Failed |'
@@ -306,8 +325,8 @@ jobs:
           echo "$passed of $RUNS runs passed."
           test "$failed" -eq 0
 
-      - name: Keep the failed runs' logs
-        if: failure()
+      - name: Keep the runs' logs and reports
+        if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: flake-proof-${{ matrix.target }}-${{ matrix.job }}
