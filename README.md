@@ -181,15 +181,16 @@ A package that ships a native addon declares it in its `package.json`, anywhere 
 
 ### Verifying a release
 
-A public repository's packages on npm's registry carry npm's [provenance](https://docs.npmjs.com/generating-provenance-statements): a statement, signed with Sigstore's public instance and recorded in its public log, of the repository, commit, workflow and run that built and published each version.
+A public repository's packages on npm's registry carry npm's [provenance](https://docs.npmjs.com/generating-provenance-statements): a statement, signed with Sigstore's public instance and recorded in its public log, of the repository, workflow and run that built and published each version, and of the run's commit.
 
 - The publish job sets `npm_config_provenance` only when the calling repository is public and the registry is npm's, so `npm publish` makes the statement; npm refuses provenance from a private repository, and GitHub's registry keeps none, so a private repository's or GitHub's registry's packages carry none.
 - The publish job is the only job with `id-token: write`, which signs the statement and, for trusted publishing, stands in for a token; GitHub grants permissions per job, not per step.
-- The statement names the calling repository, the commit the release tagged, the caller's release workflow and its run.
+- The statement names the calling repository, the caller's release workflow, its run, and the run's commit, `GITHUB_SHA`: main's head when the release started, not `commit`, the commit the release builds, whenever main has moved since `commit`.
+  The commit built is the one the version's tag, `v<version>`, names, which the tag job checks is on main and holds the version.
 
 Anyone verifies a version:
 
-- On npmjs.com, the version's page shows a provenance badge, linking to the commit and the run that built it.
+- On npmjs.com, the version's page shows a provenance badge, linking to the run that built it and the run's commit; the version's tag names the commit built.
 - `npm audit signatures`, run where the package is installed, checks every installed package's registry signature and, for each one that has provenance, its statement, and fails when one doesn't verify:
 
 ```
