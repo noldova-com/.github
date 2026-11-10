@@ -149,7 +149,7 @@ jobs:
           set -euo pipefail
           read -ra reports <<< "$REPORTS"
           for folder in ${reports[@]+"${reports[@]}"}; do
-            if [[ ! "$folder" =~ ^[A-Za-z0-9_][A-Za-z0-9._/-]*$ || "/$folder/" == */../* || "/$folder/" == */./* || "$folder" == *//* || "/$folder/" == /_build/flake-proof/* || /_build/flake-proof/ == "/${folder%/}/"* ]]; then
+            if [[ ! "$folder" =~ ^[A-Za-z0-9_.][A-Za-z0-9._/-]*$ || "/$folder/" == */../* || "/$folder/" == */./* || "$folder" == *//* || "/$folder/" == /_build/flake-proof/* || /_build/flake-proof/ == "/${folder%/}/"* ]]; then
               echo "::error::Each of reports must be a folder inside the checkout that neither is nor holds _build/flake-proof, such as _build/ui/report, not \"$folder\"."
               exit 1
             fi
