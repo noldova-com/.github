@@ -15,6 +15,7 @@ GitHub uses them for every repository of the organization that has no copy of it
 | [.github/workflows/build-and-test.yml](.github/workflows/build-and-test.yml) | The shared workflow that builds and tests a repository on each of its targets, with the checks every repository runs |
 | [.github/workflows/release-npm.yml](.github/workflows/release-npm.yml) | The shared workflow that releases a repository's npm packages to the registry its caller names |
 | [.github/workflows/update-dependents.yml](.github/workflows/update-dependents.yml) | The shared workflow that proposes a released version to the repositories that pin its packages |
+| [.github/workflows/relock-dependent.yml](.github/workflows/relock-dependent.yml) | The shared workflow that relocks a dependent for a release in its own run, which a repository calls from its own `relock.yml` |
 | [.github/workflows/flake-proof.yml](.github/workflows/flake-proof.yml) | The shared workflow that runs a repository's tests many times over, to prove a flaky test fixed or to hunt one |
 | [.github/workflows/docs-image.yml](.github/workflows/docs-image.yml) | The shared workflow that builds a repository's docs site and pushes it as a container image, with the nginx settings in [.github/docs-image/](.github/docs-image) |
 | [.github/workflows/propose-pins.yml](.github/workflows/propose-pins.yml) | This repository's own workflow that proposes each new tag to the repositories that call these workflows |
@@ -198,13 +199,54 @@ After a release, a repository proposes the version to every repository that pins
 - The job runs `pipelines dependents` from [`@noldova/tools.pipelines.github`](https://www.npmjs.com/package/@noldova/tools.pipelines.github), at the exact version `PIPELINES_TOOL` names, in a checkout of the commit; its README says what the step changes and proposes.
 - Its token is a GitHub App's, made in the job from the organization's `VERSION_UPDATES_CLIENT_ID` variable, the App's client ID, and the `VERSION_UPDATES_APP_KEY` secret of the caller's `environment`, `version-updates` unless the caller names another; that environment deploys from `main` only.
   The caller passes `secrets: inherit`, since a called workflow reads no secret the caller doesn't pass, an environment's included; the job fails first when the key is empty.
-- The App needs contents, issues and pull requests write and metadata read; the repositories its installation is given are the ones the step checks, so a repository joins or leaves by the installation's list.
+- The App needs Actions, contents, issues and pull requests write and metadata read, Actions to start and read the dependents' relock runs; the repositories its installation is given are the ones the step checks, so a repository joins or leaves by the installation's list.
   The installation must include the releasing repository too, since the step reads the release notes there; it is never updated itself.
 - A public repository's run proposes only to public repositories, so a private repository's name never shows in its public log; a private repository's run proposes to every repository the installation is given.
   The step reads whether the releasing repository is private with the App's token, and counts it as public when it can't read it.
 - The commits are the App's bot account's, as author and committer.
 - One releasing repository's runs take turns, so two quick releases never race on the same branches; another repository's run goes on at the same time.
 - npm refreshes the lock files from the registry [Shared settings](#shared-settings) names for installs; the run's own token goes to GitHub's registry only, so the caller grants `packages: read`, and the packages a lock file names must let the calling repository read them.
+- A dependent with its own `.github/workflows/relock.yml` relocks itself, as [Relocking a dependent](#relocking-a-dependent) says: the step starts every such run first and waits at most 20 minutes for all of them together, so the job's time limit is 45 minutes.
+
+### Relocking a dependent
+
+A dependent whose lock files need its own build, or packages only it may read, relocks itself in its own run, which the dependents step starts and reads; it calls the shared workflow from `.github/workflows/relock.yml`, started with `workflow_dispatch` only:
+
+```yaml
+name: Relock
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: The full hash of the commit to relock
+        required: true
+        type: string
+      request:
+        description: The release, as the dependents step sends it
+        required: true
+        type: string
+
+permissions: {}
+
+jobs:
+  relock:
+    uses: noldova-com/.github/.github/workflows/relock-dependent.yml@<full commit SHA>
+    permissions:
+      contents: read
+      packages: read
+    with:
+      commit: ${{ inputs.commit }}
+      request: ${{ inputs.request }}
+      prepare-scripts: build
+      lock-scripts: app/package-lock.json=lock:app
+```
+
+- The job checks out the commit, runs `npm ci` unless `install` is `false`, then each npm script `prepare-scripts` names, in order, as the repository's own build does, and runs `pipelines relock` from the same tool, at the version `PIPELINES_TOOL` names; its README says what the step moves and writes.
+- `lock-scripts` names each lock file the repository relocks with its own npm script, as `<lock file>=<npm script>` instead of npm's own relock; the other tracked lock files are relocked as the step's README says.
+- The result is the run's artifact `relock`, kept one day, which the dependents step reads; the run pushes nothing, and its token only reads the repository's contents and packages.
+- The run builds the repository's own code at the commit it is given, as its own checks do, so only those who may start its workflows can start it; the commit must be a full hash.
+- The run takes the Node and npm versions, the registry and the runner from [Shared settings](#shared-settings), with the same overrides as the other shared workflows.
 
 ## Reaching the callers
 
