@@ -130,7 +130,7 @@ jobs:
 
 - Where a release publishes comes from [Shared settings](#shared-settings): a public repository publishes `@noldova` packages to npm's registry with public access, and a private repository publishes `@noldova-com` packages to GitHub's registry with restricted access; a caller overrides them with `publish-registry-url`, `publish-scope` and `publish-access`.
 - A private repository's caller names its own environment, and passes `keep-versions` and `secrets: inherit` when it keeps only the newest versions.
-- The jobs first tag the commit with the version, after checking that it is on main and holds the version, then build and check the archives, publish them in the caller's environment, and keep the newest `keep-versions` versions when it is above 0.
+- The jobs first check that the run started at `commit`, so `GITHUB_SHA` is the commit released, then tag the commit with the version, after checking that it is on main and holds the version, then build and check the archives, publish them in the caller's environment, and keep the newest `keep-versions` versions when it is above 0.
   The tag comes first, before the publish waits for its approval, because GitHub lets the run's own token tag only a commit whose workflow files match main's, so a workflow change merged during the wait would leave the version untagged; when the tag is refused, nothing is built or published.
   A version whose build or publish then fails keeps its tag: a release of the same version at the same commit can still publish it, and releasing other changes needs a new version.
 - The build job installs the dependencies from the registry [Shared settings](#shared-settings) names for installs, as the flake proof does; the run's own token goes to GitHub's registry only.
@@ -181,16 +181,17 @@ A package that ships a native addon declares it in its `package.json`, anywhere 
 
 ### Verifying a release
 
-A public repository's packages on npm's registry carry npm's [provenance](https://docs.npmjs.com/generating-provenance-statements): a statement, signed with Sigstore's public instance and recorded in its public log, of the repository, workflow and run that built and published each version, and of the run's commit.
+A public repository's packages on npm's registry carry npm's [provenance](https://docs.npmjs.com/generating-provenance-statements): a statement, signed with Sigstore's public instance and recorded in its public log, of the repository, commit, workflow and run that built and published each version.
 
 - The publish job sets `npm_config_provenance` only when the calling repository is public and the registry is npm's, so `npm publish` makes the statement; npm refuses provenance from a private repository, and GitHub's registry keeps none, so a private repository's or GitHub's registry's packages carry none.
 - The publish job is the only job with `id-token: write`, which signs the statement and, for trusted publishing, stands in for a token; GitHub grants permissions per job, not per step.
-- The statement names the calling repository, the caller's release workflow, its run, and the run's commit, `GITHUB_SHA`: main's head when the release started, not `commit`, the commit the release builds, whenever main has moved since `commit`.
-  The commit built is the one the version's tag, `v<version>`, names, which the tag job checks is on main and holds the version.
+- The statement names the calling repository, the caller's release workflow, its run, and the run's commit, `GITHUB_SHA`, which is `commit`, the commit the release builds and tags `v<version>`: a run that started anywhere else fails before it tags anything.
+- So a release of main's head passes `commit` as main's head.
+  A release of an older commit on main starts from a branch whose head is that commit, such as one pushed with `git push origin <commit>:refs/heads/release/<version>` and named with `--ref release/<version>` to `gh workflow run`, then deleted; that run uses the commit's own release workflow and pins, the caller's environment must allow the branch, and the tag job still tags only a commit whose workflow files match main's.
 
 Anyone verifies a version:
 
-- On npmjs.com, the version's page shows a provenance badge, linking to the run that built it and the run's commit; the version's tag names the commit built.
+- On npmjs.com, the version's page shows a provenance badge, linking to the commit and the run that built it.
 - `npm audit signatures`, run where the package is installed, checks every installed package's registry signature and, for each one that has provenance, its statement, and fails when one doesn't verify:
 
 ```

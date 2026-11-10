@@ -134,6 +134,13 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Check that the run started at the commit
+        run: |
+          if [ "$GITHUB_SHA" != "$RELEASE_COMMIT" ]; then
+            echo "::error::The run started at $GITHUB_SHA, not at the commit to release, $RELEASE_COMMIT, so nothing is tagged, built or published: npm's provenance names the run's commit. Release main's head as its commit, or start the release from a branch whose head is the commit."
+            exit 1
+          fi
+
       - name: Check out main
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
