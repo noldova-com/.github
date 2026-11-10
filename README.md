@@ -122,7 +122,6 @@ jobs:
       contents: write
       packages: write
       id-token: write
-      attestations: write
     with:
       version: ${{ inputs.version }}
       commit: ${{ inputs.commit }}
@@ -131,7 +130,7 @@ jobs:
 
 - Where a release publishes comes from [Shared settings](#shared-settings): a public repository publishes `@noldova` packages to npm's registry with public access, and a private repository publishes `@noldova-com` packages to GitHub's registry with restricted access; a caller overrides them with `publish-registry-url`, `publish-scope` and `publish-access`.
 - A private repository's caller names its own environment, and passes `keep-versions` and `secrets: inherit` when it keeps only the newest versions.
-- The jobs first tag the commit with the version, after checking that it is on main and holds the version, then build and check the archives, attest them as [Verifying a release](#verifying-a-release) says, publish them in the caller's environment, and keep the newest `keep-versions` versions when it is above 0.
+- The jobs first tag the commit with the version, after checking that it is on main and holds the version, then build and check the archives, publish them in the caller's environment, and keep the newest `keep-versions` versions when it is above 0.
   The tag comes first, before the publish waits for its approval, because GitHub lets the run's own token tag only a commit whose workflow files match main's, so a workflow change merged during the wait would leave the version untagged; when the tag is refused, nothing is built or published.
   A version whose build or publish then fails keeps its tag: a release of the same version at the same commit can still publish it, and releasing other changes needs a new version.
 - The build job installs the dependencies from the registry [Shared settings](#shared-settings) names for installs, as the flake proof does; the run's own token goes to GitHub's registry only.
@@ -149,8 +148,8 @@ jobs:
 - Without a `registry-token` secret, GitHub's registry takes the run's own token, and npm's registry takes trusted publishing: the package's trusted publisher names the calling repository, its `release-npm.yml` and its environment, and npm records the run as the version's provenance.
 - Another registry passes its token with `secrets: registry-token: ${{ secrets.<name> }}`, which may name a secret that only the caller's environment holds.
 - A new package's first publish to npm's registry can't use trusted publishing, since the package doesn't exist yet: the caller passes a one-time token held only in its environment, the same way, and removes the secret after the first publish, so the line resolves to empty and trusted publishing takes over.
-  A public repository's packages on npm's registry get provenance either way.
-- The caller grants `contents: write`, `packages: write`, `id-token: write` and `attestations: write`, whichever registry it publishes to, since a called job gets no permission its caller didn't grant; a caller that grants less fails before any job starts.
+  A public repository's packages on npm's registry get provenance either way, as [Verifying a release](#verifying-a-release) says.
+- The caller grants `contents: write`, `packages: write` and `id-token: write`, whichever registry it publishes to, since a called job gets no permission its caller didn't grant.
 - The publish job runs in the caller's environment, which an environment that needs approval approves; an environment name that doesn't exist yet is created on first use, with no protection.
   The prune job runs in the caller's `updates-environment`, with no approval of its own: the publish approval covers its deletes, and it deletes only versions no repository locks.
 - The prune job runs only for GitHub's registry: a version published to npm's registry is never deleted.
@@ -182,28 +181,21 @@ A package that ships a native addon declares it in its `package.json`, anywhere 
 
 ### Verifying a release
 
-A release's archives and a docs image each carry a [build attestation](https://docs.github.com/en/actions/security-for-github-actions/using-artifact-attestations/using-artifact-attestations-to-establish-provenance-for-builds): a signed record of the repository, commit, workflow and run that built the file, made by [`actions/attest`](https://github.com/actions/attest) `v4.2.2`.
+A public repository's packages on npm's registry carry npm's [provenance](https://docs.npmjs.com/generating-provenance-statements): a statement, signed with Sigstore's public instance and recorded in its public log, of the repository, commit, workflow and run that built and published each version.
 
-- An attest job between the build and the publish attests every archive in `_packages/`, and the publish job publishes only after it succeeds; in the docs image workflow, an attest job attests the pushed image by its digest.
-  Only the attest jobs hold `id-token: write`, for the signing certificate, and `attestations: write`, for storing the attestation; neither checks out the repository or runs its code.
-- A public repository's attestations are signed with Sigstore's public instance and anyone can verify them; a private repository's are signed with GitHub's own instance, and only an account that can read the repository can verify them.
-- The image's attestation is stored on GitHub, not pushed to the registry, and no storage record is made.
-- Each attest job writes the commands that verify its files to the run's summary.
+- The publish job sets `npm_config_provenance` only when the calling repository is public and the registry is npm's, so `npm publish` makes the statement; npm refuses provenance from a private repository, and GitHub's registry keeps none, so a private repository's or GitHub's registry's packages carry none.
+- The publish job is the only job with `id-token: write`, which signs the statement and, for trusted publishing, stands in for a token; GitHub grants permissions per job, not per step.
+- The statement names the calling repository, the commit the release tagged, the caller's release workflow and its run.
 
-Anyone with the [GitHub CLI](https://cli.github.com/), signed in, verifies a package as npm's registry serves it, since the registry serves the archive the release published, byte for byte:
+Anyone verifies a version:
 
-```
-npm pack @noldova/<package>@<version>
-gh attestation verify noldova-<package>-<version>.tgz --repo noldova-com/<repository> --signer-workflow noldova-com/.github/.github/workflows/release-npm.yml
-```
-
-and an image by its digest, signed in to `ghcr.io` for a private image:
+- On npmjs.com, the version's page shows a provenance badge, linking to the commit and the run that built it.
+- `npm audit signatures`, run where the package is installed, checks every installed package's registry signature and, for each one that has provenance, its statement, and fails when one doesn't verify:
 
 ```
-gh attestation verify oci://ghcr.io/noldova-com/<image>@<digest> --repo noldova-com/<repository> --signer-workflow noldova-com/.github/.github/workflows/docs-image.yml
+npm install @noldova/<package>@<version>
+npm audit signatures
 ```
-
-`--repo` checks the repository the run built from, and `--signer-workflow` checks that this repository's shared workflow, not another workflow in that repository, made the attestation; the command prints the commit and the run.
 
 ## Updating dependents
 
@@ -409,8 +401,6 @@ jobs:
     permissions:
       contents: read
       packages: write
-      id-token: write
-      attestations: write
     with:
       build: npm ci && npm run build && npm run docs:build
       output: _build/docs/browser
@@ -431,8 +421,7 @@ jobs:
   It serves each prerendered page at its path, `/a/b` from `/a/b/index.html`, answers 404 for a path with no file, never another page, and answers `GET /healthz` with 200 and `ok`.
   Every answer carries the headers in `headers.conf`: `Cache-Control`, a year and immutable for a file whose name carries an 8-character content hash, such as `main-ABCD1234.js`, and `no-cache` for the rest; HSTS; a content security policy that limits plugins, the base address, form targets and framing, and leaves scripts and styles alone; `nosniff`; and the referrer policy.
 - Both jobs run on the Linux x64 runner [Shared settings](#shared-settings) names, and the image job checks that it is Linux x64.
-- An attest job then attests the image by its digest, as [Verifying a release](#verifying-a-release) says.
-- The caller grants `contents: read`, `packages: write`, `id-token: write` and `attestations: write`, since a called job gets no permission its caller didn't grant, and a caller that grants less fails before any job starts; the site job keeps only `contents: read` and `packages: read`, and only the attest job holds `id-token: write` and `attestations: write`.
+- The caller grants `contents: read` and `packages: write`, since a called job gets no permission its caller didn't grant; the site job keeps only `contents: read` and `packages: read`.
 - A new image package is private; the organization's owners choose whether it is public.
 
 ## Install scripts
