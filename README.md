@@ -431,6 +431,10 @@ jobs:
 A repository moves a label, such as `latest`, to an image already in the registry, without building again, from a job of its own workflow:
 
 ```yaml
+concurrency:
+  group: move-latest
+  cancel-in-progress: false
+
 jobs:
   label:
     name: Move latest
@@ -451,6 +455,8 @@ jobs:
 - It fails and moves nothing when an input is malformed, or when that digest can't be read from the image's repository.
   Otherwise `crane tag` moves the label, and a registry that refuses fails the run with the label where it was.
 - The run's summary records the image, the digest and the label.
+- Two runs on one label move it one at a time, since the job's `concurrency` group is the image and the label; a newer waiting run replaces an older waiting one.
+  That can't order builds that finish out of order, so a caller that moves a label on each merge serializes its whole run per label, as the example does, under a group of its own: a group named the same as the called job's would cancel it.
 - It runs on GitHub's `ubuntu-24.04`, whichever repository calls it, since it needs nothing but GitHub.
 
 ## Install scripts

@@ -33,6 +33,9 @@ jobs:
     name: Move the label
     runs-on: ubuntu-24.04
     timeout-minutes: 5
+    concurrency:
+      group: move-image-label/${{ inputs.image }}:${{ inputs.label }}
+      cancel-in-progress: false
     permissions:
       packages: write
     env:
@@ -45,16 +48,16 @@ jobs:
       - name: Check the inputs
         run: |
           set -euo pipefail
-          if [[ ! "$IMAGE_NAME" =~ ^[a-z0-9]+([._/-]+[a-z0-9]+)*$ ]]; then
-            echo "::error::The image must be a name under the organization in lower case, such as site-docs, not \"$IMAGE_NAME\". The label did not move."
+          if [[ ! "$IMAGE_NAME" =~ ^[a-z0-9]+([._-][a-z0-9]+)*(/[a-z0-9]+([._-][a-z0-9]+)*)*$ ]]; then
+            echo "::error::The image must be a name under the organization in lower case, such as site-docs. The label did not move."
             exit 1
           fi
           if [[ ! "$IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
-            echo "::error::The digest must be sha256:<64 hex digits>, not \"$IMAGE_DIGEST\". The label did not move."
+            echo "::error::The digest must be sha256:<64 hex digits>. The label did not move."
             exit 1
           fi
           if [[ ! "$IMAGE_LABEL" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]]; then
-            echo "::error::The label must be a valid image tag, such as latest, not \"$IMAGE_LABEL\". It did not move."
+            echo "::error::The label must be a valid image tag, such as latest. It did not move."
             exit 1
           fi
 
@@ -79,6 +82,7 @@ jobs:
           set -euo pipefail
           image="ghcr.io/${OWNER,,}/$IMAGE_NAME"
           printf '%s' "$REGISTRY_TOKEN" | crane auth login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          trap 'crane auth logout ghcr.io' EXIT
           if ! crane digest "$image@$IMAGE_DIGEST" > /dev/null; then
             echo "::error::$image has no image with the digest $IMAGE_DIGEST, or the run's token can't read it. The label $IMAGE_LABEL did not move."
             exit 1
