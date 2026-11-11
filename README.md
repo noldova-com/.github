@@ -18,8 +18,9 @@ GitHub uses them for every repository of the organization that has no copy of it
 | [.github/workflows/relock-dependent.yml](.github/workflows/relock-dependent.yml) | The shared workflow that relocks a dependent for a release in its own run, which a repository calls from its own `relock.yml` |
 | [.github/workflows/flake-proof.yml](.github/workflows/flake-proof.yml) | The shared workflow that runs a repository's tests many times over, to prove a flaky test fixed or to hunt one |
 | [.github/workflows/docs-image.yml](.github/workflows/docs-image.yml) | The shared workflow that builds a repository's docs site and pushes it as a container image, with the nginx settings in [.github/docs-image/](.github/docs-image) |
+| [.github/workflows/move-image-label.yml](.github/workflows/move-image-label.yml) | The shared workflow that moves a label on an image already in the registry, without building again |
 | [.github/workflows/propose-pins.yml](.github/workflows/propose-pins.yml) | This repository's own workflow that proposes each new tag to the repositories that call these workflows |
-| [.github/workflows/versions.yml](.github/workflows/versions.yml) | The Node and npm versions and the runners every shared workflow uses, in one place |
+| [.github/workflows/versions.yml](.github/workflows/versions.yml) | The Node and npm versions and the runners the shared workflows use, in one place |
 
 A repository runs the shared check from its own workflow, `.github/workflows/require-linked-issue.yml`:
 
@@ -425,6 +426,39 @@ jobs:
 - The caller grants `contents: read` and `packages: write`, since a called job gets no permission its caller didn't grant; the site job keeps only `contents: read` and `packages: read`.
 - A new image package is private; the organization's owners choose whether it is public.
 
+## Moving an image label
+
+A repository moves a label, such as `latest`, to an image already in the registry, without building again, from a job of its own workflow:
+
+```yaml
+concurrency:
+  group: move-latest
+  cancel-in-progress: false
+
+jobs:
+  label:
+    name: Move latest
+    needs: docs
+    uses: noldova-com/.github/.github/workflows/move-image-label.yml@<full commit SHA> # <tag>
+    permissions:
+      packages: write
+    with:
+      image: <repository>-docs
+      digest: ${{ needs.docs.outputs.digest }}
+      label: latest
+```
+
+- `image` is the image's name under the organization on `ghcr.io`, so a run can reach only its own organization's images; `digest` is `sha256:<64 hex digits>`; `label` is a valid image tag, made if it doesn't exist yet.
+- The caller grants `packages: write`, the job's only permission, and the package must give the calling repository write access; a package the repository pushed has that already.
+  A job that calls a shared workflow can't name an environment, so a caller that needs an approval puts it on a job the call `needs`.
+- It checks the three inputs, then downloads [crane](https://github.com/google/go-containerregistry/blob/main/cmd/crane/README.md) `v0.22.1`, checked against its SHA-256 as the docs image's job does, and signs in to `ghcr.io` with the run's own token.
+- It fails and moves nothing when an input is malformed, or when that digest can't be read from the image's repository.
+  Otherwise `crane tag` moves the label, and a registry that refuses fails the run with the label where it was.
+- The run's summary records the image, the digest and the label.
+- Two runs on one label move it one at a time, since the job's `concurrency` group is the image and the label; a newer waiting run replaces an older waiting one.
+  That can't order builds that finish out of order, so a caller that moves a label on each merge serializes its whole run per label, as the example does, under a group of its own: a group named the same as the called job's would cancel it.
+- It runs on GitHub's `ubuntu-24.04`, whichever repository calls it, since it needs nothing but GitHub.
+
 ## Install scripts
 
 - The build and test, release and flake proof workflows set `npm_config_ignore_scripts`, so every npm their jobs run, `npm ci` and any npm a repository's own scripts run, runs no package's install scripts while the run's token is set.
@@ -452,6 +486,8 @@ A caller overrides any of them for its own runs:
 - A release's `publish-registry-url`, `publish-scope` and `publish-access` take a registry's https address, a scope and `public` or `restricted`.
 - `runs-on-<target>`, such as `runs-on-linux-arm64`, takes the `runs-on` value as JSON, such as `'"ubuntu-24.04-arm"'` or a private repository's runner group and labels.
 - A public repository's runner must be one GitHub hosts, named by one label such as `"ubuntu-24.04"`: versions.yml fails the run before the other jobs start when it isn't.
+
+[move-image-label.yml](.github/workflows/move-image-label.yml) alone doesn't call versions.yml: it uses none of these settings, and names its GitHub-hosted runner itself.
 
 The versions job itself runs on Linux x64 by the same rule, written out in its `runs-on`, since GitHub doesn't let `runs-on` read a workflow's `env`.
 The organization's own runners serve private repositories only, and its variables are visible to them only.
