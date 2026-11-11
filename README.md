@@ -131,9 +131,10 @@ jobs:
 
 - Where a release publishes comes from [Shared settings](#shared-settings): a public repository publishes `@noldova` packages to npm's registry with public access, and a private repository publishes `@noldova-com` packages to GitHub's registry with restricted access; a caller overrides them with `publish-registry-url`, `publish-scope` and `publish-access`.
 - A private repository's caller names its own environment, and passes `keep-versions` and `secrets: inherit` when it keeps only the newest versions.
-- The jobs first tag the commit with the version, after checking that it is on main and holds the version, then build and check the archives, publish them in the caller's environment, and keep the newest `keep-versions` versions when it is above 0.
+- A release always builds main's head: one rule for every release, whichever registry it publishes to.
+  The jobs first check that the run started on main at `commit`, so `GITHUB_REF` is `refs/heads/main` and `GITHUB_SHA` is the commit released, and fail before anything is tagged otherwise, then tag the commit with the version, after checking that it is on main and holds the version, then build and check the archives, publish them in the caller's environment, and keep the newest `keep-versions` versions when it is above 0.
   The tag comes first, before the publish waits for its approval, because GitHub lets the run's own token tag only a commit whose workflow files match main's, so a workflow change merged during the wait would leave the version untagged; when the tag is refused, nothing is built or published.
-  A version whose build or publish then fails keeps its tag: a release of the same version at the same commit can still publish it, and releasing other changes needs a new version.
+  A version whose build or publish then fails keeps its tag: a release of the same version at the same commit can still publish it while main's head is still that commit; once main has moved, a new version is released at the head.
 - The build job installs the dependencies from the registry [Shared settings](#shared-settings) names for installs, as the flake proof does; the run's own token goes to GitHub's registry only.
 - No package's install scripts run in any job, as [Install scripts](#install-scripts) says, and the publishing token is set only on the publish and prune steps.
 - The tag, build, publish and prune jobs run the steps of [`@noldova/tools.pipelines.github`](https://www.npmjs.com/package/@noldova/tools.pipelines.github), installed at the exact version `RELEASE_TOOL` names from npm's registry: `pipelines source` checks that the commit is on main and that its `version.json` holds the version; `pipelines archive` checks the built archives; `pipelines publish` publishes them and waits until the registry serves them; `pipelines prune` deletes the older versions no repository locks; `pipelines tag` tags the commit.
@@ -182,16 +183,15 @@ A package that ships a native addon declares it in its `package.json`, anywhere 
 
 ### Verifying a release
 
-A public repository's packages on npm's registry carry npm's [provenance](https://docs.npmjs.com/generating-provenance-statements): a statement, signed with Sigstore's public instance and recorded in its public log, of the repository, workflow and run that built and published each version, and of the run's commit.
+A public repository's packages on npm's registry carry npm's [provenance](https://docs.npmjs.com/generating-provenance-statements): a statement, signed with Sigstore's public instance and recorded in its public log, of the repository, commit, workflow and run that built and published each version.
 
 - The publish job sets `npm_config_provenance` only when the calling repository is public and the registry is npm's, so `npm publish` makes the statement; npm refuses provenance from a private repository, and GitHub's registry keeps none, so a private repository's or GitHub's registry's packages carry none.
 - The publish job is the only job with `id-token: write`, which signs the statement and, for trusted publishing, stands in for a token; GitHub grants permissions per job, not per step.
-- The statement names the calling repository, the caller's release workflow, its run, and the run's commit, `GITHUB_SHA`: main's head when the release started, not `commit`, the commit the release builds, whenever main has moved since `commit`.
-  The commit built is the one the version's tag, `v<version>`, names, which the tag job checks is on main and holds the version.
+- The statement names the calling repository, the caller's release workflow, its run, and the run's commit, `GITHUB_SHA`, which is `commit`, main's head, the commit the release builds and tags `v<version>`: a run that started on any other branch or at any other commit fails before it tags anything.
 
 Anyone verifies a version:
 
-- On npmjs.com, the version's page shows a provenance badge, linking to the run that built it and the run's commit; the version's tag names the commit built.
+- On npmjs.com, the version's page shows a provenance badge, linking to the commit and the run that built it.
 - `npm audit signatures`, run where the package is installed, checks every installed package's registry signature and, for each one that has provenance, its statement, and fails when one doesn't verify:
 
 ```
