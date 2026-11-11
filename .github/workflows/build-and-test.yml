@@ -265,7 +265,7 @@ jobs:
         run: pipelines archive _packages "$(node -p 'require("./version.json").version')" "$(git rev-parse HEAD)" "$RELEASE_SCOPE"
 
   separate-test:
-    name: Test ${{ inputs.separate-test }}
+    name: Separate test
     needs: [versions, plan]
     if: ${{ !cancelled() && inputs.separate-test != '' && needs.plan.result == 'success' }}
     runs-on: ${{ fromJSON(needs.versions.outputs.runs-on-linux-x64) }}
