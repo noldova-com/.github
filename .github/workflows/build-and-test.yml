@@ -21,6 +21,14 @@ on:
         description: Whether to run the pipelines tool the build just packed, instead of the version this workflow pins, for the repository that holds the tool
         type: boolean
         default: false
+      shards:
+        description: Splits targets' tests into parts, each a job of its own, as target=parts separated by spaces, such as 'macos-x64=2 macos-arm64=2', with 2 to 8 parts; the repository's npm run test takes --shard=<part>/<parts>
+        type: string
+        default: ''
+      separate-test:
+        description: Runs the repository's npm run test:<name> in a Linux x64 job of its own, such as docs, and gives each target's tests NOLDOVA_SEPARATE_TEST=<name>, so that its npm run test leaves that part out
+        type: string
+        default: ''
       timeout-minutes:
         description: The minutes each target's job may take
         type: number
@@ -94,9 +102,70 @@ jobs:
       runs-on-macos-x64: ${{ inputs.runs-on-macos-x64 }}
       runs-on-macos-arm64: ${{ inputs.runs-on-macos-arm64 }}
 
+  plan:
+    name: Plan the parts
+    needs: versions
+    if: inputs.shards != '' || inputs.separate-test != ''
+    runs-on: ${{ fromJSON(needs.versions.outputs.runs-on-linux-x64) }}
+    timeout-minutes: 5
+    permissions: {}
+    outputs:
+      targets: ${{ steps.plan.outputs.targets }}
+    steps:
+      - name: Split the targets into parts
+        id: plan
+        env:
+          TARGETS: ${{ needs.versions.outputs.targets }}
+          SHARDS: ${{ inputs.shards }}
+          SEPARATE_TEST: ${{ inputs.separate-test }}
+        run: |
+          set -euo pipefail
+          if [ -n "$SEPARATE_TEST" ] && [[ ! "$SEPARATE_TEST" =~ ^[a-z][a-z0-9-]*$ ]]; then
+            echo "::error::separate-test names an npm script's part after test:, in lowercase letters, digits and dashes, such as docs, not \"$SEPARATE_TEST\"."
+            exit 1
+          fi
+          declare -A parts=()
+          read -ra pairs <<< "$SHARDS"
+          for pair in "${pairs[@]}"; do
+            if [[ ! "$pair" =~ ^([a-z]+-[a-z0-9]+)=([2-8])$ ]]; then
+              echo "::error::Each of shards is a target and its parts, 2 to 8, such as macos-arm64=2, not \"$pair\"."
+              exit 1
+            fi
+            if [ -n "${parts[${BASH_REMATCH[1]}]:-}" ]; then
+              echo "::error::shards names ${BASH_REMATCH[1]} twice."
+              exit 1
+            fi
+            parts[${BASH_REMATCH[1]}]=${BASH_REMATCH[2]}
+          done
+          entries=()
+          entry='\{"target":"([a-z0-9-]+)","name":"([^"]+)"\}(.*)$'
+          rest="$TARGETS"
+          while [[ "$rest" =~ $entry ]]; do
+            target=${BASH_REMATCH[1]}
+            name=${BASH_REMATCH[2]}
+            rest=${BASH_REMATCH[3]}
+            count=${parts[$target]:-1}
+            unset "parts[$target]"
+            if [ "$count" -eq 1 ]; then
+              entries+=("{\"target\":\"$target\",\"name\":\"$name\",\"part\":1,\"parts\":1}")
+              continue
+            fi
+            for ((part = 1; part <= count; part++)); do
+              entries+=("{\"target\":\"$target\",\"name\":\"$name ($part of $count)\",\"part\":$part,\"parts\":$count}")
+            done
+          done
+          if [ "${#parts[@]}" -gt 0 ]; then
+            echo "::error::shards names ${!parts[*]}, which targets doesn't list."
+            exit 1
+          fi
+          targets="[$(IFS=,; echo "${entries[*]}")]"
+          echo "targets=$targets" >> "$GITHUB_OUTPUT"
+          echo "$targets"
+
   build-and-test:
     name: ${{ matrix.name }}
-    needs: versions
+    needs: [versions, plan]
+    if: ${{ !cancelled() && needs.versions.result == 'success' && (needs.plan.result == 'success' || needs.plan.result == 'skipped') }}
     runs-on: ${{ fromJSON(needs.versions.outputs[format('runs-on-{0}', matrix.target)]) }}
     timeout-minutes: ${{ inputs.timeout-minutes }}
     permissions:
@@ -105,7 +174,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJSON(needs.versions.outputs.targets) }}
+        include: ${{ fromJSON(needs.plan.outputs.targets || needs.versions.outputs.targets) }}
     steps:
       - name: Check out the revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -172,13 +241,16 @@ jobs:
         run: pipelines line-endings
 
       - name: Test the packages
-        run: npm run test -- --skip-test-details --skip-coverage-details
+        env:
+          NOLDOVA_SEPARATE_TEST: ${{ inputs.separate-test }}
+          SHARD: ${{ matrix.parts > 1 && format('--shard={0}/{1}', matrix.part, matrix.parts) || '' }}
+        run: npm run test -- --skip-test-details --skip-coverage-details $SHARD
 
       - name: Check that tracked files are unchanged
         run: pipelines unchanged
 
       - name: Check that a second build packs the same archives
-        if: inputs.publishes
+        if: inputs.publishes && (!matrix.part || matrix.part == 1)
         env:
           NODE_AUTH_TOKEN: ${{ needs.versions.outputs.install-registry-url == 'https://npm.pkg.github.com' && github.token || '' }}
           GIT_CONFIG_COUNT: '1'
@@ -187,14 +259,71 @@ jobs:
         run: pipelines reproducible _packages
 
       - name: Check the archives as the release does
-        if: inputs.publishes
+        if: inputs.publishes && (!matrix.part || matrix.part == 1)
         env:
           RELEASE_SCOPE: ${{ needs.versions.outputs.publish-scope }}
         run: pipelines archive _packages "$(node -p 'require("./version.json").version')" "$(git rev-parse HEAD)" "$RELEASE_SCOPE"
 
+  separate-test:
+    name: Separate test
+    needs: [versions, plan]
+    if: ${{ !cancelled() && inputs.separate-test != '' && needs.plan.result == 'success' }}
+    runs-on: ${{ fromJSON(needs.versions.outputs.runs-on-linux-x64) }}
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Check out the revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ needs.versions.outputs.node-version }}
+          package-manager-cache: false
+          registry-url: ${{ needs.versions.outputs.install-registry-url }}
+          scope: ${{ needs.versions.outputs.install-scope }}
+
+      - name: Build the packages
+        env:
+          NODE_AUTH_TOKEN: ${{ needs.versions.outputs.install-registry-url == 'https://npm.pkg.github.com' && github.token || '' }}
+        run: npm run build
+
+      - name: Install the pipelines tool
+        env:
+          NPM_CONFIG_USERCONFIG: ${{ runner.temp }}/pipelines-tool.npmrc
+          TOOL_FROM_SOURCE: ${{ inputs.tool-from-source }}
+        run: |
+          shopt -s failglob
+          tool="$PIPELINES_TOOL"
+          if [ "$TOOL_FROM_SOURCE" = true ]; then
+            mkdir "$RUNNER_TEMP/pipelines-archives"
+            cp _packages/*.tgz "$RUNNER_TEMP/pipelines-archives/"
+            tool="$(echo "$RUNNER_TEMP"/pipelines-archives/*.tgz)"
+          fi
+          npm install --prefix "$RUNNER_TEMP/pipelines-tool" --registry https://registry.npmjs.org/ --no-audit --no-fund $tool
+          echo "$RUNNER_TEMP/pipelines-tool/node_modules/.bin" >> "$GITHUB_PATH"
+
+      - name: Check the toolchain
+        env:
+          NODE_VERSION: ${{ needs.versions.outputs.node-version }}
+          NPM_VERSION: ${{ needs.versions.outputs.npm-version }}
+        run: pipelines toolchain "$NODE_VERSION" $NPM_VERSION
+
+      - name: Run the separate test
+        env:
+          SEPARATE_TEST: ${{ inputs.separate-test }}
+        run: npm run "test:$SEPARATE_TEST"
+
+      - name: Check that tracked files are unchanged
+        run: pipelines unchanged
+
   all-targets:
     name: All targets
-    needs: [versions, build-and-test]
+    needs: [versions, plan, build-and-test, separate-test]
     if: always()
     runs-on: ${{ fromJSON(needs.versions.outputs.runs-on-linux-x64) }}
     timeout-minutes: 5
@@ -204,7 +333,13 @@ jobs:
         env:
           VERSIONS_RESULT: ${{ needs.versions.result }}
           RESULT: ${{ needs.build-and-test.result }}
+          PLAN_RESULT: ${{ needs.plan.result }}
+          SEPARATE_RESULT: ${{ needs.separate-test.result }}
+          PLANNED: ${{ inputs.shards != '' || inputs.separate-test != '' }}
+          SEPARATE: ${{ inputs.separate-test != '' }}
         run: |
-          echo "The versions' result: $VERSIONS_RESULT; the targets' result: $RESULT"
+          echo "The versions' result: $VERSIONS_RESULT; the plan's: $PLAN_RESULT; the targets': $RESULT; the separate test's: $SEPARATE_RESULT"
           test "$VERSIONS_RESULT" = success
           test "$RESULT" = success
+          if [ "$PLANNED" = true ]; then test "$PLAN_RESULT" = success; fi
+          if [ "$SEPARATE" = true ]; then test "$SEPARATE_RESULT" = success; fi
