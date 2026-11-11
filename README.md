@@ -18,8 +18,9 @@ GitHub uses them for every repository of the organization that has no copy of it
 | [.github/workflows/relock-dependent.yml](.github/workflows/relock-dependent.yml) | The shared workflow that relocks a dependent for a release in its own run, which a repository calls from its own `relock.yml` |
 | [.github/workflows/flake-proof.yml](.github/workflows/flake-proof.yml) | The shared workflow that runs a repository's tests many times over, to prove a flaky test fixed or to hunt one |
 | [.github/workflows/docs-image.yml](.github/workflows/docs-image.yml) | The shared workflow that builds a repository's docs site and pushes it as a container image, with the nginx settings in [.github/docs-image/](.github/docs-image) |
+| [.github/workflows/move-image-label.yml](.github/workflows/move-image-label.yml) | The shared workflow that moves a label on an image already in the registry, without building again |
 | [.github/workflows/propose-pins.yml](.github/workflows/propose-pins.yml) | This repository's own workflow that proposes each new tag to the repositories that call these workflows |
-| [.github/workflows/versions.yml](.github/workflows/versions.yml) | The Node and npm versions and the runners every shared workflow uses, in one place |
+| [.github/workflows/versions.yml](.github/workflows/versions.yml) | The Node and npm versions and the runners the shared workflows use, in one place |
 
 A repository runs the shared check from its own workflow, `.github/workflows/require-linked-issue.yml`:
 
@@ -130,9 +131,10 @@ jobs:
 
 - Where a release publishes comes from [Shared settings](#shared-settings): a public repository publishes `@noldova` packages to npm's registry with public access, and a private repository publishes `@noldova-com` packages to GitHub's registry with restricted access; a caller overrides them with `publish-registry-url`, `publish-scope` and `publish-access`.
 - A private repository's caller names its own environment, and passes `keep-versions` and `secrets: inherit` when it keeps only the newest versions.
-- The jobs first tag the commit with the version, after checking that it is on main and holds the version, then build and check the archives, publish them in the caller's environment, and keep the newest `keep-versions` versions when it is above 0.
+- A release always builds main's head: one rule for every release, whichever registry it publishes to.
+  The jobs first check that the run started on main at `commit`, so `GITHUB_REF` is `refs/heads/main` and `GITHUB_SHA` is the commit released, and fail before anything is tagged otherwise, then tag the commit with the version, after checking that it is on main and holds the version, then build and check the archives, publish them in the caller's environment, and keep the newest `keep-versions` versions when it is above 0.
   The tag comes first, before the publish waits for its approval, because GitHub lets the run's own token tag only a commit whose workflow files match main's, so a workflow change merged during the wait would leave the version untagged; when the tag is refused, nothing is built or published.
-  A version whose build or publish then fails keeps its tag: a release of the same version at the same commit can still publish it, and releasing other changes needs a new version.
+  A version whose build or publish then fails keeps its tag: a release of the same version at the same commit can still publish it while main's head is still that commit; once main has moved, a new version is released at the head.
 - The build job installs the dependencies from the registry [Shared settings](#shared-settings) names for installs, as the flake proof does; the run's own token goes to GitHub's registry only.
 - No package's install scripts run in any job, as [Install scripts](#install-scripts) says, and the publishing token is set only on the publish and prune steps.
 - The tag, build, publish and prune jobs run the steps of [`@noldova/tools.pipelines.github`](https://www.npmjs.com/package/@noldova/tools.pipelines.github), installed at the exact version `RELEASE_TOOL` names from npm's registry: `pipelines source` checks that the commit is on main and that its `version.json` holds the version; `pipelines archive` checks the built archives; `pipelines publish` publishes them and waits until the registry serves them; `pipelines prune` deletes the older versions no repository locks; `pipelines tag` tags the commit.
@@ -181,16 +183,15 @@ A package that ships a native addon declares it in its `package.json`, anywhere 
 
 ### Verifying a release
 
-A public repository's packages on npm's registry carry npm's [provenance](https://docs.npmjs.com/generating-provenance-statements): a statement, signed with Sigstore's public instance and recorded in its public log, of the repository, workflow and run that built and published each version, and of the run's commit.
+A public repository's packages on npm's registry carry npm's [provenance](https://docs.npmjs.com/generating-provenance-statements): a statement, signed with Sigstore's public instance and recorded in its public log, of the repository, commit, workflow and run that built and published each version.
 
 - The publish job sets `npm_config_provenance` only when the calling repository is public and the registry is npm's, so `npm publish` makes the statement; npm refuses provenance from a private repository, and GitHub's registry keeps none, so a private repository's or GitHub's registry's packages carry none.
 - The publish job is the only job with `id-token: write`, which signs the statement and, for trusted publishing, stands in for a token; GitHub grants permissions per job, not per step.
-- The statement names the calling repository, the caller's release workflow, its run, and the run's commit, `GITHUB_SHA`: main's head when the release started, not `commit`, the commit the release builds, whenever main has moved since `commit`.
-  The commit built is the one the version's tag, `v<version>`, names, which the tag job checks is on main and holds the version.
+- The statement names the calling repository, the caller's release workflow, its run, and the run's commit, `GITHUB_SHA`, which is `commit`, main's head, the commit the release builds and tags `v<version>`: a run that started on any other branch or at any other commit fails before it tags anything.
 
 Anyone verifies a version:
 
-- On npmjs.com, the version's page shows a provenance badge, linking to the run that built it and the run's commit; the version's tag names the commit built.
+- On npmjs.com, the version's page shows a provenance badge, linking to the commit and the run that built it.
 - `npm audit signatures`, run where the package is installed, checks every installed package's registry signature and, for each one that has provenance, its statement, and fails when one doesn't verify:
 
 ```
@@ -425,6 +426,39 @@ jobs:
 - The caller grants `contents: read` and `packages: write`, since a called job gets no permission its caller didn't grant; the site job keeps only `contents: read` and `packages: read`.
 - A new image package is private; the organization's owners choose whether it is public.
 
+## Moving an image label
+
+A repository moves a label, such as `latest`, to an image already in the registry, without building again, from a job of its own workflow:
+
+```yaml
+concurrency:
+  group: move-latest
+  cancel-in-progress: false
+
+jobs:
+  label:
+    name: Move latest
+    needs: docs
+    uses: noldova-com/.github/.github/workflows/move-image-label.yml@<full commit SHA> # <tag>
+    permissions:
+      packages: write
+    with:
+      image: <repository>-docs
+      digest: ${{ needs.docs.outputs.digest }}
+      label: latest
+```
+
+- `image` is the image's name under the organization on `ghcr.io`, so a run can reach only its own organization's images; `digest` is `sha256:<64 hex digits>`; `label` is a valid image tag, made if it doesn't exist yet.
+- The caller grants `packages: write`, the job's only permission, and the package must give the calling repository write access; a package the repository pushed has that already.
+  A job that calls a shared workflow can't name an environment, so a caller that needs an approval puts it on a job the call `needs`.
+- It checks the three inputs, then downloads [crane](https://github.com/google/go-containerregistry/blob/main/cmd/crane/README.md) `v0.22.1`, checked against its SHA-256 as the docs image's job does, and signs in to `ghcr.io` with the run's own token.
+- It fails and moves nothing when an input is malformed, or when that digest can't be read from the image's repository.
+  Otherwise `crane tag` moves the label, and a registry that refuses fails the run with the label where it was.
+- The run's summary records the image, the digest and the label.
+- Two runs on one label move it one at a time, since the job's `concurrency` group is the image and the label; a newer waiting run replaces an older waiting one.
+  That can't order builds that finish out of order, so a caller that moves a label on each merge serializes its whole run per label, as the example does, under a group of its own: a group named the same as the called job's would cancel it.
+- It runs on GitHub's `ubuntu-24.04`, whichever repository calls it, since it needs nothing but GitHub.
+
 ## Install scripts
 
 - The build and test, release and flake proof workflows set `npm_config_ignore_scripts`, so every npm their jobs run, `npm ci` and any npm a repository's own scripts run, runs no package's install scripts while the run's token is set.
@@ -452,6 +486,8 @@ A caller overrides any of them for its own runs:
 - A release's `publish-registry-url`, `publish-scope` and `publish-access` take a registry's https address, a scope and `public` or `restricted`.
 - `runs-on-<target>`, such as `runs-on-linux-arm64`, takes the `runs-on` value as JSON, such as `'"ubuntu-24.04-arm"'` or a private repository's runner group and labels.
 - A public repository's runner must be one GitHub hosts, named by one label such as `"ubuntu-24.04"`: versions.yml fails the run before the other jobs start when it isn't.
+
+[move-image-label.yml](.github/workflows/move-image-label.yml) alone doesn't call versions.yml: it uses none of these settings, and names its GitHub-hosted runner itself.
 
 The versions job itself runs on Linux x64 by the same rule, written out in its `runs-on`, since GitHub doesn't let `runs-on` read a workflow's `env`.
 The organization's own runners serve private repositories only, and its variables are visible to them only.
