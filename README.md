@@ -18,8 +18,9 @@ GitHub uses them for every repository of the organization that has no copy of it
 | [.github/workflows/relock-dependent.yml](.github/workflows/relock-dependent.yml) | The shared workflow that relocks a dependent for a release in its own run, which a repository calls from its own `relock.yml` |
 | [.github/workflows/flake-proof.yml](.github/workflows/flake-proof.yml) | The shared workflow that runs a repository's tests many times over, to prove a flaky test fixed or to hunt one |
 | [.github/workflows/docs-image.yml](.github/workflows/docs-image.yml) | The shared workflow that builds a repository's docs site and pushes it as a container image, with the nginx settings in [.github/docs-image/](.github/docs-image) |
+| [.github/workflows/move-image-label.yml](.github/workflows/move-image-label.yml) | The shared workflow that moves a label on an image already in the registry, without building again |
 | [.github/workflows/propose-pins.yml](.github/workflows/propose-pins.yml) | This repository's own workflow that proposes each new tag to the repositories that call these workflows |
-| [.github/workflows/versions.yml](.github/workflows/versions.yml) | The Node and npm versions and the runners every shared workflow uses, in one place |
+| [.github/workflows/versions.yml](.github/workflows/versions.yml) | The Node and npm versions and the runners the shared workflows use, in one place |
 
 A repository runs the shared check from its own workflow, `.github/workflows/require-linked-issue.yml`:
 
@@ -131,9 +132,10 @@ jobs:
 
 - Where a release publishes comes from [Shared settings](#shared-settings): a public repository publishes `@noldova` packages to npm's registry with public access, and a private repository publishes `@noldova-com` packages to GitHub's registry with restricted access; a caller overrides them with `publish-registry-url`, `publish-scope` and `publish-access`.
 - A private repository's caller names its own environment, and passes `keep-versions` and `secrets: inherit` when it keeps only the newest versions.
-- The jobs first tag the commit with the version, after checking that it is on main and holds the version, then build and check the archives, publish them in the caller's environment, and keep the newest `keep-versions` versions when it is above 0.
+- A release always builds main's head: one rule for every release, whichever registry it publishes to.
+  The jobs first check that the run started on main at `commit`, so `GITHUB_REF` is `refs/heads/main` and `GITHUB_SHA` is the commit released, and fail before anything is tagged otherwise, then tag the commit with the version, after checking that it is on main and holds the version, then build and check the archives, publish them in the caller's environment, and keep the newest `keep-versions` versions when it is above 0.
   The tag comes first, before the publish waits for its approval, because GitHub lets the run's own token tag only a commit whose workflow files match main's, so a workflow change merged during the wait would leave the version untagged; when the tag is refused, nothing is built or published.
-  A version whose build or publish then fails keeps its tag: a release of the same version at the same commit can still publish it, and releasing other changes needs a new version.
+  A version whose build or publish then fails keeps its tag: a release of the same version at the same commit can still publish it while main's head is still that commit; once main has moved, a new version is released at the head.
 - The build job installs the dependencies from the registry [Shared settings](#shared-settings) names for installs, as the flake proof does; the run's own token goes to GitHub's registry only.
 - No package's install scripts run in any job, as [Install scripts](#install-scripts) says, and the publishing token is set only on the publish and prune steps.
 - The tag, build, publish and prune jobs run the steps of [`@noldova/tools.pipelines.github`](https://www.npmjs.com/package/@noldova/tools.pipelines.github), installed at the exact version `RELEASE_TOOL` names from npm's registry: `pipelines source` checks that the commit is on main and that its `version.json` holds the version; `pipelines archive` checks the built archives; `pipelines publish` publishes them and waits until the registry serves them; `pipelines prune` deletes the older versions no repository locks; `pipelines tag` tags the commit.
@@ -149,7 +151,7 @@ jobs:
 - Without a `registry-token` secret, GitHub's registry takes the run's own token, and npm's registry takes trusted publishing: the package's trusted publisher names the calling repository, its `release-npm.yml` and its environment, and npm records the run as the version's provenance.
 - Another registry passes its token with `secrets: registry-token: ${{ secrets.<name> }}`, which may name a secret that only the caller's environment holds.
 - A new package's first publish to npm's registry can't use trusted publishing, since the package doesn't exist yet: the caller passes a one-time token held only in its environment, the same way, and removes the secret after the first publish, so the line resolves to empty and trusted publishing takes over.
-  A public repository's packages on npm's registry get provenance either way.
+  A public repository's packages on npm's registry get provenance either way, as [Verifying a release](#verifying-a-release) says.
 - The caller grants `contents: write`, `packages: write` and `id-token: write`, whichever registry it publishes to, since a called job gets no permission its caller didn't grant.
 - The publish job runs in the caller's environment, which an environment that needs approval approves; an environment name that doesn't exist yet is created on first use, with no protection.
   The prune job runs in the caller's `updates-environment`, with no approval of its own: the publish approval covers its deletes, and it deletes only versions no repository locks.
@@ -180,6 +182,24 @@ A package that ships a native addon declares it in its `package.json`, anywhere 
 - After the build, the release refuses an archive that lacks any of its addons' builds for any target, naming the package, the addon and the target.
 - The addon jobs run on the x64 runners of Linux, macOS and Windows that [Shared settings](#shared-settings) names, and need the organization's own runners, which hold the sysroots: a private repository with `RUNNER_TYPE` set to `GITHUB` passes its own runners with `runs-on-<system>-x64`, and a public repository can't release a package with addons yet: the plan job refuses it.
 
+### Verifying a release
+
+A public repository's packages on npm's registry carry npm's [provenance](https://docs.npmjs.com/generating-provenance-statements): a statement, signed with Sigstore's public instance and recorded in its public log, of the repository, commit, workflow and run that built and published each version.
+
+- The publish job sets `npm_config_provenance` only when the calling repository is public and the registry is npm's, so `npm publish` makes the statement; npm refuses provenance from a private repository, and GitHub's registry keeps none, so a private repository's or GitHub's registry's packages carry none.
+- The publish job is the only job with `id-token: write`, which signs the statement and, for trusted publishing, stands in for a token; GitHub grants permissions per job, not per step.
+- The statement names the calling repository, the caller's release workflow, its run, and the run's commit, `GITHUB_SHA`, which is `commit`, main's head, the commit the release builds and tags `v<version>`: a run that started on any other branch or at any other commit fails before it tags anything.
+
+Anyone verifies a version:
+
+- On npmjs.com, the version's page shows a provenance badge, linking to the commit and the run that built it.
+- `npm audit signatures`, run where the package is installed, checks every installed package's registry signature and, for each one that has provenance, its statement, and fails when one doesn't verify:
+
+```
+npm install @noldova/<package>@<version>
+npm audit signatures
+```
+
 ## Updating dependents
 
 After a release, a repository proposes the version to every repository that pins its packages exactly, with a second job in its release workflow:
@@ -197,7 +217,7 @@ After a release, a repository proposes the version to every repository that pins
     secrets: inherit
 ```
 
-- The job runs `pipelines dependents` from [`@noldova/tools.pipelines.github`](https://www.npmjs.com/package/@noldova/tools.pipelines.github), at the exact version `PIPELINES_TOOL` names, in a checkout of the commit; its README says what the step changes and proposes.
+- The job runs `pipelines dependents` from [`@noldova/tools.pipelines.github`](https://www.npmjs.com/package/@noldova/tools.pipelines.github), at the exact version `PIPELINES_TOOL` names, in a checkout of the commit, on the Node [Shared settings](#shared-settings) names, after checking the Node and npm versions with `pipelines toolchain`, as [Building and testing](#building-and-testing) does; its README says what the step changes and proposes.
 - Its token is a GitHub App's, made in the job from the organization's `VERSION_UPDATES_CLIENT_ID` variable, the App's client ID, and the `VERSION_UPDATES_APP_KEY` secret of the caller's `environment`, `version-updates` unless the caller names another; that environment deploys from `main` only.
   The caller passes `secrets: inherit`, since a called workflow reads no secret the caller doesn't pass, an environment's included; the job fails first when the key is empty.
 - The App needs Actions, contents, issues and pull requests write and metadata read, Actions to start and read the dependents' relock runs; the repositories its installation is given are the ones the step checks, so a repository joins or leaves by the installation's list.
@@ -348,13 +368,16 @@ jobs:
 
 - The caller's "Concurrency group" job, after versions.yml names its runner, works out the flake-proof job's concurrency group from `ref` and the first 16 hex digits of the filter's SHA-256, since GitHub refuses a run whose group is over 400 characters before it starts, as a filter that names several tests in full makes it. Runs of different filters go side by side; a second run of the same `ref` and `filter` shows its first job done and waits at its flake-proof job until the first run ends.
 - A plan job checks the inputs and splits the runs into up to `jobs` parallel jobs per target; each job checks out `ref`, installs the dependencies with `npm ci`, with no package's install scripts, as [Install scripts](#install-scripts) says, builds with `npm run build` and runs the npm script `script`, `test` by default, with the filters, once per run.
-- Each job writes its runs, passes and failures to the run's summary and fails when any run failed; a failed run's last 60 log lines go to the job's log, and its whole log to the job's artifact, kept for the days versions.yml names.
+- Each job writes its runs, passes and failures to the run's summary and fails when any run failed; a failed run's last 60 log lines go to the job's log, and every run's whole log, passed or failed, goes to the job's artifact, `flake-proof-<target>-<job>`, as `run-<n>.log`, kept for the days versions.yml names.
 - `targets` takes any of `linux-x64`, `linux-arm64`, `windows-x64`, `windows-arm64`, `macos-x64` and `macos-arm64`, in any number and order, separated by spaces; a target named twice runs once, and the run fails before the test jobs start on a name that isn't a target or a target with no runner.
 - The caller may also pass `node-version`, `npm-version`, `install-registry-url`, `install-scope`, `retention-days` and `runs-on-<target>`, which [Shared settings](#shared-settings) explains; a caller that passes none takes the defaults.
-- A repository proves an end-to-end test with three more inputs, which its caller adds to its own `workflow_dispatch` and passes on:
+- A repository proves an end-to-end test with four more inputs, which its caller adds to its own `workflow_dispatch` and passes on:
   - `script`: the npm script each run runs, such as `test:e2e`.
   - `prepare`: npm scripts each job runs once, after `npm run build` and before the runs, separated by spaces, such as an app's install and build. They run with the build's token and with no package's install scripts.
   - `display`: a boolean, off by default. On Linux it runs each run under `xvfb-run`, on a 1920×1080 screen, and `dbus-run-session`, for a test that opens windows, with an unlocked `gnome-keyring` secret service on a new empty keyring, for a test whose app keeps a secret; it installs `gnome-keyring` on a GitHub-hosted runner and fails on a self-hosted one without it. Windows and macOS runners have a display and a secret store of their own.
+  - `reports`: the folders in the checkout the script writes its report and results to, separated by spaces, such as `_build/ui/report _build/ui/results`. After each run, each folder that exists moves into the artifact as `run-<n>/<folder>`, so every run keeps its own report beside its log; the plan job fails on a folder outside the checkout, inside `_build/flake-proof`, or holding it, such as `_build`.
+
+  For one end-to-end spec, the caller passes the spec and its runner's options in `filter`, which go after `--`: with `script` `test:ui`, `filter` `tests/e2e/window.spec.ts:42 --retries 0` runs `npm run test:ui -- tests/e2e/window.spec.ts:42 --retries 0`, so the runner retries nothing and a flaky run fails.
 
   Before it installs anything, each job checks that `script` and every `prepare` script are npm scripts in the package's `package.json`, and fails otherwise.
 - A test job may take `timeout-minutes`, 120 by default and up to 360, which a caller with a slow suite raises.
@@ -404,6 +427,39 @@ jobs:
 - The caller grants `contents: read` and `packages: write`, since a called job gets no permission its caller didn't grant; the site job keeps only `contents: read` and `packages: read`.
 - A new image package is private; the organization's owners choose whether it is public.
 
+## Moving an image label
+
+A repository moves a label, such as `latest`, to an image already in the registry, without building again, from a job of its own workflow:
+
+```yaml
+concurrency:
+  group: move-latest
+  cancel-in-progress: false
+
+jobs:
+  label:
+    name: Move latest
+    needs: docs
+    uses: noldova-com/.github/.github/workflows/move-image-label.yml@<full commit SHA> # <tag>
+    permissions:
+      packages: write
+    with:
+      image: <repository>-docs
+      digest: ${{ needs.docs.outputs.digest }}
+      label: latest
+```
+
+- `image` is the image's name under the organization on `ghcr.io`, so a run can reach only its own organization's images; `digest` is `sha256:<64 hex digits>`; `label` is a valid image tag, made if it doesn't exist yet.
+- The caller grants `packages: write`, the job's only permission, and the package must give the calling repository write access; a package the repository pushed has that already.
+  A job that calls a shared workflow can't name an environment, so a caller that needs an approval puts it on a job the call `needs`.
+- It checks the three inputs, then downloads [crane](https://github.com/google/go-containerregistry/blob/main/cmd/crane/README.md) `v0.22.1`, checked against its SHA-256 as the docs image's job does, and signs in to `ghcr.io` with the run's own token.
+- It fails and moves nothing when an input is malformed, or when that digest can't be read from the image's repository.
+  Otherwise `crane tag` moves the label, and a registry that refuses fails the run with the label where it was.
+- The run's summary records the image, the digest and the label.
+- Two runs on one label move it one at a time, since the job's `concurrency` group is the image and the label; a newer waiting run replaces an older waiting one.
+  That can't order builds that finish out of order, so a caller that moves a label on each merge serializes its whole run per label, as the example does, under a group of its own: a group named the same as the called job's would cancel it.
+- It runs on GitHub's `ubuntu-24.04`, whichever repository calls it, since it needs nothing but GitHub.
+
 ## Install scripts
 
 - The build and test, release and flake proof workflows set `npm_config_ignore_scripts`, so every npm their jobs run, `npm ci` and any npm a repository's own scripts run, runs no package's install scripts while the run's token is set.
@@ -431,6 +487,8 @@ A caller overrides any of them for its own runs:
 - A release's `publish-registry-url`, `publish-scope` and `publish-access` take a registry's https address, a scope and `public` or `restricted`.
 - `runs-on-<target>`, such as `runs-on-linux-arm64`, takes the `runs-on` value as JSON, such as `'"ubuntu-24.04-arm"'` or a private repository's runner group and labels.
 - A public repository's runner must be one GitHub hosts, named by one label such as `"ubuntu-24.04"`: versions.yml fails the run before the other jobs start when it isn't.
+
+[move-image-label.yml](.github/workflows/move-image-label.yml) alone doesn't call versions.yml: it uses none of these settings, and names its GitHub-hosted runner itself.
 
 The versions job itself runs on Linux x64 by the same rule, written out in its `runs-on`, since GitHub doesn't let `runs-on` read a workflow's `env`.
 The organization's own runners serve private repositories only, and its variables are visible to them only.
