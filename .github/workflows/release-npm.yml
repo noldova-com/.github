@@ -102,7 +102,7 @@ env:
   RELEASE_VERSION: ${{ inputs.version }}
   RELEASE_COMMIT: ${{ inputs.commit }}
   RELEASE_KEEP_VERSIONS: ${{ inputs.keep-versions }}
-  RELEASE_TOOL: '@noldova/tools.pipelines.github@0.0.19'
+  RELEASE_TOOL: '@noldova/tools.pipelines.github@0.0.20'
 
 jobs:
   versions:
