@@ -26,7 +26,7 @@ on:
         type: string
         default: ''
       shard-outputs:
-        description: A folder, relative to the checkout, that each part of a split target keeps once its tests pass, such as _build/coverage; a job per split target then takes every part's copy and runs the repository's npm run test:merge -- <folder> <parts>, which "All targets" requires
+        description: A folder, relative to the checkout, that each part of a split target keeps once its tests pass, such as _build/coverage; a job per split target then downloads every part's copy into a folder of its own, one part-<target>-<part> subfolder per part holding what the part's folder held, and runs the repository's npm run test:merge -- <that folder> <parts>, which "All targets" requires
         type: string
         default: ''
       separate-test:
@@ -109,7 +109,7 @@ jobs:
   plan:
     name: Plan the parts
     needs: versions
-    if: inputs.shards != '' || inputs.separate-test != ''
+    if: inputs.shards != '' || inputs.separate-test != '' || inputs.shard-outputs != ''
     runs-on: ${{ fromJSON(needs.versions.outputs.runs-on-linux-x64) }}
     timeout-minutes: 5
     permissions: {}
@@ -271,6 +271,7 @@ jobs:
           path: ${{ inputs.shard-outputs }}
           if-no-files-found: error
           include-hidden-files: true
+          overwrite: true
           retention-days: ${{ needs.versions.outputs.retention-days }}
 
       - name: Check that tracked files are unchanged
@@ -398,7 +399,7 @@ jobs:
           PLAN_RESULT: ${{ needs.plan.result }}
           SEPARATE_RESULT: ${{ needs.separate-test.result }}
           MERGE_RESULT: ${{ needs.merge-parts.result }}
-          PLANNED: ${{ inputs.shards != '' || inputs.separate-test != '' }}
+          PLANNED: ${{ inputs.shards != '' || inputs.separate-test != '' || inputs.shard-outputs != '' }}
           SEPARATE: ${{ inputs.separate-test != '' }}
           MERGED: ${{ inputs.shard-outputs != '' }}
         run: |
