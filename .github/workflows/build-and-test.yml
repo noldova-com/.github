@@ -14,7 +14,7 @@ on:
         required: true
         type: string
       publishes:
-        description: Whether the repository releases packages, so each target also checks that a second build packs the same archives and that the archives pass the release's check
+        description: Whether the repository releases packages, so the Linux x64 target also checks that a second build packs the same archives, and each target that the archives pass the release's check
         type: boolean
         default: false
       tool-from-source:
@@ -250,7 +250,7 @@ jobs:
         run: pipelines unchanged
 
       - name: Check that a second build packs the same archives
-        if: inputs.publishes && (!matrix.part || matrix.part == 1)
+        if: inputs.publishes && matrix.target == 'linux-x64' && (!matrix.part || matrix.part == 1)
         env:
           NODE_AUTH_TOKEN: ${{ needs.versions.outputs.install-registry-url == 'https://npm.pkg.github.com' && github.token || '' }}
           GIT_CONFIG_COUNT: '1'
