@@ -25,6 +25,10 @@ on:
         description: Splits targets' tests into parts, each a job of its own, as target=parts separated by spaces, such as 'macos-x64=2 macos-arm64=2', with 2 to 8 parts; the repository's npm run test takes --shard=<part>/<parts>
         type: string
         default: ''
+      shard-outputs:
+        description: A folder, relative to the checkout, that each part of a split target keeps once its tests pass, such as _build/coverage; a job per split target then downloads every part's copy into a folder of its own, one part-<target>-<part> subfolder per part holding what the part's folder held, and runs the repository's npm run test:merge -- <that folder> <parts>, which "All targets" requires
+        type: string
+        default: ''
       separate-test:
         description: Runs the repository's npm run test:<name> in a Linux x64 job of its own, such as docs, and gives each target's tests NOLDOVA_SEPARATE_TEST=<name>, so that its npm run test leaves that part out
         type: string
@@ -105,23 +109,29 @@ jobs:
   plan:
     name: Plan the parts
     needs: versions
-    if: inputs.shards != '' || inputs.separate-test != ''
+    if: inputs.shards != '' || inputs.separate-test != '' || inputs.shard-outputs != ''
     runs-on: ${{ fromJSON(needs.versions.outputs.runs-on-linux-x64) }}
     timeout-minutes: 5
     permissions: {}
     outputs:
       targets: ${{ steps.plan.outputs.targets }}
+      merges: ${{ steps.plan.outputs.merges }}
     steps:
       - name: Split the targets into parts
         id: plan
         env:
           TARGETS: ${{ needs.versions.outputs.targets }}
           SHARDS: ${{ inputs.shards }}
+          SHARD_OUTPUTS: ${{ inputs.shard-outputs }}
           SEPARATE_TEST: ${{ inputs.separate-test }}
         run: |
           set -euo pipefail
           if [ -n "$SEPARATE_TEST" ] && [[ ! "$SEPARATE_TEST" =~ ^[a-z][a-z0-9-]*$ ]]; then
             echo "::error::separate-test names an npm script's part after test:, in lowercase letters, digits and dashes, such as docs, not \"$SEPARATE_TEST\"."
+            exit 1
+          fi
+          if [ -n "$SHARD_OUTPUTS" ] && [ -z "$SHARDS" ]; then
+            echo "::error::shard-outputs names the folder each part of a split target keeps, so it needs shards."
             exit 1
           fi
           declare -A parts=()
@@ -138,6 +148,7 @@ jobs:
             parts[${BASH_REMATCH[1]}]=${BASH_REMATCH[2]}
           done
           entries=()
+          merges=()
           entry='\{"target":"([a-z0-9-]+)","name":"([^"]+)"\}(.*)$'
           rest="$TARGETS"
           while [[ "$rest" =~ $entry ]]; do
@@ -153,6 +164,7 @@ jobs:
             for ((part = 1; part <= count; part++)); do
               entries+=("{\"target\":\"$target\",\"name\":\"$name ($part of $count)\",\"part\":$part,\"parts\":$count}")
             done
+            merges+=("{\"target\":\"$target\",\"name\":\"$name\",\"parts\":$count}")
           done
           if [ "${#parts[@]}" -gt 0 ]; then
             echo "::error::shards names ${!parts[*]}, which targets doesn't list."
@@ -161,6 +173,11 @@ jobs:
           targets="[$(IFS=,; echo "${entries[*]}")]"
           echo "targets=$targets" >> "$GITHUB_OUTPUT"
           echo "$targets"
+          if [ -n "$SHARD_OUTPUTS" ]; then
+            merges="[$(IFS=,; echo "${merges[*]}")]"
+            echo "merges=$merges" >> "$GITHUB_OUTPUT"
+            echo "$merges"
+          fi
 
   build-and-test:
     name: ${{ matrix.name }}
@@ -246,6 +263,17 @@ jobs:
           SHARD: ${{ matrix.parts > 1 && format('--shard={0}/{1}', matrix.part, matrix.parts) || '' }}
         run: npm run test -- --skip-test-details --skip-coverage-details $SHARD
 
+      - name: Keep the part's outputs
+        if: inputs.shard-outputs != '' && matrix.parts > 1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: part-${{ matrix.target }}-${{ matrix.part }}
+          path: ${{ inputs.shard-outputs }}
+          if-no-files-found: error
+          include-hidden-files: true
+          overwrite: true
+          retention-days: ${{ needs.versions.outputs.retention-days }}
+
       - name: Check that tracked files are unchanged
         run: pipelines unchanged
 
@@ -321,9 +349,44 @@ jobs:
       - name: Check that tracked files are unchanged
         run: pipelines unchanged
 
+  merge-parts:
+    name: Merge the parts of ${{ matrix.name }}
+    needs: [versions, plan, build-and-test]
+    if: ${{ !cancelled() && inputs.shard-outputs != '' && needs.build-and-test.result == 'success' }}
+    runs-on: ${{ fromJSON(needs.versions.outputs.runs-on-linux-x64) }}
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.merges) }}
+    steps:
+      - name: Check out the revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ needs.versions.outputs.node-version }}
+          package-manager-cache: false
+
+      - name: Take every part's outputs
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: part-${{ matrix.target }}-*
+          path: ${{ runner.temp }}/parts
+
+      - name: Merge the parts
+        env:
+          PARTS: ${{ matrix.parts }}
+        run: npm run test:merge -- "$RUNNER_TEMP/parts" "$PARTS"
+
   all-targets:
     name: All targets
-    needs: [versions, plan, build-and-test, separate-test]
+    needs: [versions, plan, build-and-test, separate-test, merge-parts]
     if: always()
     runs-on: ${{ fromJSON(needs.versions.outputs.runs-on-linux-x64) }}
     timeout-minutes: 5
@@ -335,11 +398,14 @@ jobs:
           RESULT: ${{ needs.build-and-test.result }}
           PLAN_RESULT: ${{ needs.plan.result }}
           SEPARATE_RESULT: ${{ needs.separate-test.result }}
-          PLANNED: ${{ inputs.shards != '' || inputs.separate-test != '' }}
+          MERGE_RESULT: ${{ needs.merge-parts.result }}
+          PLANNED: ${{ inputs.shards != '' || inputs.separate-test != '' || inputs.shard-outputs != '' }}
           SEPARATE: ${{ inputs.separate-test != '' }}
+          MERGED: ${{ inputs.shard-outputs != '' }}
         run: |
-          echo "The versions' result: $VERSIONS_RESULT; the plan's: $PLAN_RESULT; the targets': $RESULT; the separate test's: $SEPARATE_RESULT"
+          echo "The versions' result: $VERSIONS_RESULT; the plan's: $PLAN_RESULT; the targets': $RESULT; the separate test's: $SEPARATE_RESULT; the merges': $MERGE_RESULT"
           test "$VERSIONS_RESULT" = success
           test "$RESULT" = success
           if [ "$PLANNED" = true ]; then test "$PLAN_RESULT" = success; fi
           if [ "$SEPARATE" = true ]; then test "$SEPARATE_RESULT" = success; fi
+          if [ "$MERGED" = true ]; then test "$MERGE_RESULT" = success; fi
