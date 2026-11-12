@@ -18,6 +18,7 @@ Private vulnerability reporting is owned by the organization's `.github` reposit
 
 - Render untrusted text and Markdown through escaping and reviewed sanitization.
 - Never evaluate embedded code.
+  The one exception is a function the app ships, run in an isolated world without universal access in a page it shows: the text it runs always equals the text it ships, pinned exactly, it never takes code from the page, a file or a message, and its arguments are only bounded, validated values; a test may run that same text in its own page.
 - Parse and validate external URLs against the operation's allowed schemes and destinations before opening or fetching them; redirects keep the same policy.
 
 ## Files
