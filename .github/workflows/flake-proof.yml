@@ -269,7 +269,7 @@ jobs:
       - name: Install the virtual display, the session bus and the keyring on GitHub's runner
         if: inputs.display && runner.os == 'Linux' && runner.environment == 'github-hosted'
         timeout-minutes: 5
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends xvfb xauth dbus-daemon dbus-bin gnome-keyring
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends xvfb xauth dbus-daemon dbus-bin gnome-keyring libglib2.0-bin
 
       - name: Run the tests
         env:
@@ -290,11 +290,11 @@ jobs:
           trap 'if [ -n "$xvfb" ]; then kill "$xvfb" 2>/dev/null; fi' EXIT
           if [ "$VIRTUAL_DISPLAY" = true ] && [ "$RUNNER_OS" = Linux ]; then
             command -v gnome-keyring-daemon >/dev/null || { echo "::error::gnome-keyring isn't installed on this runner; display mode needs it."; exit 1; }
-            for program in Xvfb xauth dbus-run-session; do
+            for program in Xvfb xauth dbus-run-session gdbus; do
               command -v "$program" >/dev/null || { echo "::error::This runner has no $program, which display mode runs each run under."; exit 1; }
             done
             keyring=true
-            command=(dbus-run-session -- sh -c 'echo | XDG_DATA_HOME="$KEYRING/data" gnome-keyring-daemon --unlock --components=secrets --control-directory="$KEYRING/control" >/dev/null && exec "$@"' sh "${command[@]}")
+            command=(dbus-run-session -- sh -c 'echo | XDG_DATA_HOME="$KEYRING/data" gnome-keyring-daemon --unlock --components=secrets --control-directory="$KEYRING/control" >/dev/null && { gdbus wait --session --timeout 30 org.freedesktop.secrets || { echo "::error::The unlocked keyring did not take org.freedesktop.secrets on the session bus within 30 seconds."; exit 1; }; } && exec "$@"' sh "${command[@]}")
           fi
           mkdir -p _build/flake-proof
           passed=0
