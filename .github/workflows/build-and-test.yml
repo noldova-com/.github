@@ -405,6 +405,9 @@ jobs:
       contents: read
       packages: read
     steps:
+      - name: Note when the job started
+        run: echo "JOB_STARTED=$(date +%s)" >> "$GITHUB_ENV"
+
       - name: Check out the revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -456,7 +459,7 @@ jobs:
         timeout-minutes: 5
         run: |
           sudo DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=600 update
-          sudo DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=600 install -y --no-install-recommends xvfb xauth dbus-daemon dbus-bin gnome-keyring
+          sudo DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=600 install -y --no-install-recommends xvfb dbus-daemon dbus-bin gnome-keyring
 
       - name: Allow unprivileged user namespaces, which Chromium's sandbox needs
         if: inputs.unprivileged-user-namespaces
@@ -476,17 +479,41 @@ jobs:
       - name: Run the end-to-end test
         env:
           END_TO_END: ${{ inputs.end-to-end }}
+          JOB_MINUTES: ${{ inputs.timeout-minutes }}
         run: |
-          for program in xvfb-run dbus-run-session gnome-keyring-daemon; do
+          for program in Xvfb dbus-run-session gnome-keyring-daemon; do
             if ! command -v "$program" >/dev/null; then
               echo "::error::This runner has no $program, which the end-to-end test runs under."
               exit 1
             fi
           done
+          # The test stops three minutes before the job's timeout, so a hung test fails this step and the report is still kept.
+          limit=$(( JOB_MINUTES * 60 - ($(date +%s) - JOB_STARTED) - 180 ))
+          if [ "$limit" -lt 60 ]; then
+            echo "::error::The job's timeout leaves the end-to-end test $limit seconds once three minutes are kept for its report; raise timeout-minutes."
+            exit 1
+          fi
           mkdir -p "$RUNNER_TEMP/keyring-data/keyrings"
           mkdir -m 700 "$RUNNER_TEMP/keyring-control"
           printf login > "$RUNNER_TEMP/keyring-data/keyrings/default"
-          xvfb-run --auto-servernum --server-args='-screen 0 1920x1080x24' dbus-run-session -- sh -c 'echo | XDG_DATA_HOME="$RUNNER_TEMP/keyring-data" gnome-keyring-daemon --unlock --components=secrets --control-directory="$RUNNER_TEMP/keyring-control" >/dev/null && npm run "test:$END_TO_END"'
+          # Xvfb picks a free display itself and writes its number to the pipe, so two jobs on one machine never race for a display.
+          mkfifo "$RUNNER_TEMP/xvfb-display"
+          Xvfb -displayfd 3 -screen 0 1920x1080x24 -nolisten tcp 3> "$RUNNER_TEMP/xvfb-display" &
+          xvfb=$!
+          trap 'kill "$xvfb" 2>/dev/null || true' EXIT
+          display=
+          read -r display < "$RUNNER_TEMP/xvfb-display" || true
+          if [ -z "$display" ]; then
+            echo "::error::Xvfb didn't start, so the end-to-end test has no display."
+            exit 1
+          fi
+          echo "Xvfb serves display :$display; the test may run for $limit seconds."
+          status=0
+          DISPLAY=":$display" timeout --kill-after=30 "$limit" dbus-run-session -- sh -c 'echo | XDG_DATA_HOME="$RUNNER_TEMP/keyring-data" gnome-keyring-daemon --unlock --components=secrets --control-directory="$RUNNER_TEMP/keyring-control" >/dev/null && npm run "test:$END_TO_END"' || status=$?
+          if [ "$status" = 124 ] || [ "$status" = 137 ]; then
+            echo "::error::The end-to-end test ran past its $limit seconds and was stopped, three minutes before the job's timeout."
+          fi
+          exit "$status"
 
       - name: Keep the end-to-end test's report
         if: failure() && inputs.end-to-end-report != ''
