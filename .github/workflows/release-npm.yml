@@ -298,6 +298,10 @@ jobs:
           platform=$(node -p process.platform)
           if [ "$platform" = win32 ]; then key=windowsAddons; else key=posixAddons; fi
           node_gyp="$(npm root -g)/npm/node_modules/node-gyp/bin/node-gyp.js"
+          if [ ! -f "$node_gyp" ]; then
+            node_gyp=$(node -p 'const path = require("node:path"); const folder = path.dirname(process.execPath); path.join(process.platform === "win32" ? folder : path.join(folder, "..", "lib"), "node_modules", "npm", "node_modules", "node-gyp", "bin", "node-gyp.js")')
+            echo "npm's global folder has no npm, so the build takes node-gyp from the npm that ships with Node: $node_gyp"
+          fi
           headers="$RUNNER_TEMP/node-gyp"
           out="$RUNNER_TEMP/addons"
           mkdir -p "$out"
