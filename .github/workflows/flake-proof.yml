@@ -287,7 +287,7 @@ jobs:
           command=(npm run "$SCRIPT" -- ${filters[@]+"${filters[@]}"})
           keyring=false
           xvfb=
-          trap 'if [ -n "$xvfb" ]; then kill "$xvfb" 2>/dev/null; fi' EXIT
+          trap 'if [ -n "$xvfb" ]; then kill "$xvfb" 2>/dev/null || true; fi' EXIT
           if [ "$VIRTUAL_DISPLAY" = true ] && [ "$RUNNER_OS" = Linux ]; then
             command -v gnome-keyring-daemon >/dev/null || { echo "::error::gnome-keyring isn't installed on this runner; display mode needs it."; exit 1; }
             for program in Xvfb xauth dbus-run-session; do
@@ -310,6 +310,7 @@ jobs:
               # open only to a new cookie. Xvfb takes every cookie in its -auth file whatever display the entry names,
               # so the cookie goes in under :0 before the display is known, and under the display Xvfb picks once it is.
               export XAUTHORITY="$KEYRING/xauthority"
+              touch "$XAUTHORITY"
               cookie=$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')
               xauth -q add :0 . "$cookie"
               mkfifo "$KEYRING/display"
@@ -333,8 +334,8 @@ jobs:
               tail -n 60 "$log"
             fi
             if [ -n "$xvfb" ]; then
-              kill "$xvfb" 2>/dev/null
-              wait "$xvfb" 2>/dev/null
+              kill "$xvfb" 2>/dev/null || true
+              wait "$xvfb" 2>/dev/null || true
               xvfb=
             fi
             for folder in ${reports[@]+"${reports[@]}"}; do
