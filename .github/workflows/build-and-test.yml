@@ -500,6 +500,7 @@ jobs:
           # Only a client holding the cookie may use the display. Xvfb takes every cookie in its -auth file whatever display the entry names,
           # so the cookie goes in under :0 before the display is known, and under the display Xvfb picks once it is.
           export XAUTHORITY="$RUNNER_TEMP/xvfb-auth"
+          touch "$XAUTHORITY"
           cookie=$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')
           xauth -q add :0 . "$cookie"
           mkfifo "$RUNNER_TEMP/xvfb-display"
