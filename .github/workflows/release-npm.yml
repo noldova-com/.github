@@ -206,8 +206,6 @@ jobs:
 
       - name: List the systems whose packages declare addons
         id: plan
-        env:
-          RELEASE_PUBLIC: ${{ !github.event.repository.private }}
         run: |
           node --input-type=module <<'SCRIPT'
           import { execFileSync } from "node:child_process";
@@ -232,10 +230,6 @@ jobs:
           }
           if (!valid)
             process.exit(1);
-          if (declared.size > 0 && process.env.RELEASE_PUBLIC === "true") {
-            console.log("::error::A public repository can't build native addons yet: they build only on the organization's own runners.");
-            process.exit(1);
-          }
           const systems = [...(declared.has("posixAddons") ? ["linux", "macos"] : []), ...(declared.has("windowsAddons") ? ["windows"] : [])];
           const output = JSON.stringify(systems.map(system => ({ system })));
           appendFileSync(process.env.GITHUB_OUTPUT, `systems=${output}\n`);
@@ -277,7 +271,28 @@ jobs:
             test "$(npm --version)" = "$NPM_VERSION"
           fi
 
+      - name: Set up clang and the Debian 11 sysroots on a GitHub-hosted Linux runner
+        if: matrix.system == 'linux' && runner.environment == 'github-hosted'
+        env:
+          SYSROOT_BASE: https://dev-cdn.electronjs.org/linux-sysroots
+        run: |
+          set -euo pipefail
+          sudo DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=600 update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=600 install -y --no-install-recommends clang-18 lld-18 llvm-18
+          for entry in "debian_bullseye_amd64-sysroot f2e052b0cdab9b6f9bfe311c5269264d5f4e38a018bbc27ba2314b73ac8f7053" "debian_bullseye_arm64-sysroot f4f680a60e314418f95513ac63e9942ad565005ebbd36b660b20cd605d11a664"; do
+            read -r name sha256 <<< "$entry"
+            download="$RUNNER_TEMP/$name.tar.xz"
+            curl -fsSL --retry 3 -o "$download" "$SYSROOT_BASE/$sha256"
+            echo "$sha256  $download" | sha256sum --check --quiet -
+            mkdir -p "$RUNNER_TEMP/sysroots/$name"
+            tar --no-same-owner -xJf "$download" -C "$RUNNER_TEMP/sysroots/$name"
+            echo "Unpacked $name, SHA-256 $sha256."
+          done
+
       - name: Build every declared addon for x64 and ARM64
+        env:
+          SYSROOTS: ${{ runner.environment == 'github-hosted' && format('{0}/sysroots', runner.temp) || '/opt/noldova-sysroots' }}
+          LLVM: ${{ runner.environment == 'github-hosted' && '18' || '21' }}
         run: |
           set -euo pipefail
           platform=$(node -p process.platform)
@@ -302,14 +317,14 @@ jobs:
                   cd "$work"
                   if [ "$platform" = linux ]; then
                     if [ "$arch" = arm64 ]; then
-                      cross="--target=aarch64-linux-gnu --sysroot=/opt/noldova-sysroots/debian_bullseye_arm64-sysroot"
+                      cross="--target=aarch64-linux-gnu --sysroot=$SYSROOTS/debian_bullseye_arm64-sysroot"
                     else
-                      cross="--target=x86_64-linux-gnu --sysroot=/opt/noldova-sysroots/debian_bullseye_amd64-sysroot"
+                      cross="--target=x86_64-linux-gnu --sysroot=$SYSROOTS/debian_bullseye_amd64-sysroot"
                     fi
-                    export CC="clang-21 $cross"
-                    export CXX="clang++-21 $cross"
-                    export LINK="clang++-21 $cross -fuse-ld=lld"
-                    export AR=llvm-ar-21
+                    export CC="clang-$LLVM $cross"
+                    export CXX="clang++-$LLVM $cross"
+                    export LINK="clang++-$LLVM $cross -fuse-ld=lld"
+                    export AR=llvm-ar-$LLVM
                   fi
                   node "$node_gyp" rebuild --arch="$arch" --loglevel=error --devdir="$headers"
                 )
