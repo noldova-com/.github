@@ -181,11 +181,12 @@ A package that ships a native addon declares it in its `package.json`, anywhere 
 - Each name is kebab-case, and its source is the package's `src/native/<name>.c`, built with Node-API version 8.
 - `windowsAddons` are built for `win32-x64` and `win32-arm64` on a Windows runner; `posixAddons` for `linux-x64` and `linux-arm64` on a Linux runner and for `darwin-x64` and `darwin-arm64` in one job on the macOS runner; the ARM64 targets are cross-compiled.
 - Both Linux targets are built with clang against a Debian bullseye sysroot for their architecture, so they need only glibc 2.31.
+  The organization's own Linux runners hold clang 21 and the two sysroots; on a GitHub-hosted runner the job takes Ubuntu's clang 18, lld 18 and llvm 18, installing them only when the image lacks them, and downloads the same two sysroots, Electron's Debian 11 sysroots, each checked by its SHA-256 before it is unpacked.
 - A plan job checks that the commit is on main, refuses a declaration that isn't a list of kebab-case names, naming the manifest and the key, and lists the systems that build addons; only the runners of the systems that build addons take part, so a repository without addons waits for no Windows or macOS runner; its `RELEASE_ADDONS` folder is empty.
 - The build job hands the builds to `npm run build` in `RELEASE_ADDONS`, the absolute path of a folder in the runner's temporary folder, outside the checkout, that holds `<package path in the repository>/<platform>-<arch>/<name>.node`, such as `src/noldova.example.package/linux-arm64/posix-process.node`; the folder's root also holds a `built-on-<platform>.txt` from each runner.
 - The repository's build puts each build in its package at `native/<platform>-<arch>/<name>.node`, and fails when a declared target's build is missing; its own code loads `native/${process.platform}-${process.arch}/<name>.node`.
 - After the build, the release refuses an archive that lacks any of its addons' builds for any target, naming the package, the addon and the target.
-- The addon jobs run on the x64 runners of Linux, macOS and Windows that [Shared settings](#shared-settings) names, and need the organization's own runners, which hold the sysroots: a private repository with `RUNNER_TYPE` set to `GITHUB` passes its own runners with `runs-on-<system>-x64`, and a public repository can't release a package with addons yet: the plan job refuses it.
+- The addon jobs run on the x64 runners of Linux, macOS and Windows that [Shared settings](#shared-settings) names, as every other job picks its runners: a public repository's on GitHub-hosted runners, and a private repository's on the organization's own, unless `RUNNER_TYPE` is `GITHUB` or it passes others with `runs-on-<system>-x64`.
 
 ### Verifying a release
 

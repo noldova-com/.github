@@ -206,8 +206,6 @@ jobs:
 
       - name: List the systems whose packages declare addons
         id: plan
-        env:
-          RELEASE_PUBLIC: ${{ !github.event.repository.private }}
         run: |
           node --input-type=module <<'SCRIPT'
           import { execFileSync } from "node:child_process";
@@ -232,10 +230,6 @@ jobs:
           }
           if (!valid)
             process.exit(1);
-          if (declared.size > 0 && process.env.RELEASE_PUBLIC === "true") {
-            console.log("::error::A public repository can't build native addons yet: they build only on the organization's own runners.");
-            process.exit(1);
-          }
           const systems = [...(declared.has("posixAddons") ? ["linux", "macos"] : []), ...(declared.has("windowsAddons") ? ["windows"] : [])];
           const output = JSON.stringify(systems.map(system => ({ system })));
           appendFileSync(process.env.GITHUB_OUTPUT, `systems=${output}\n`);
@@ -277,12 +271,45 @@ jobs:
             test "$(npm --version)" = "$NPM_VERSION"
           fi
 
+      - name: Set up clang and the Debian 11 sysroots on a GitHub-hosted Linux runner
+        if: matrix.system == 'linux' && runner.environment == 'github-hosted'
+        env:
+          SYSROOT_BASE: https://dev-cdn.electronjs.org/linux-sysroots
+        run: |
+          set -euo pipefail
+          llvm=18
+          sysroots="$RUNNER_TEMP/sysroots"
+          packages=("clang-$llvm" "lld-$llvm" "llvm-$llvm")
+          status=$(dpkg-query -W -f='${db:Status-Status}\n' "${packages[@]}" 2>/dev/null || true)
+          if [ "$(grep -cx installed <<< "$status" || true)" = "${#packages[@]}" ]; then
+            echo "The image has ${packages[*]} already."
+          else
+            sudo DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=600 -o Acquire::Retries=3 update
+            sudo DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=600 -o Acquire::Retries=3 install -y --no-install-recommends "${packages[@]}"
+          fi
+          for entry in "debian_bullseye_amd64-sysroot f2e052b0cdab9b6f9bfe311c5269264d5f4e38a018bbc27ba2314b73ac8f7053" "debian_bullseye_arm64-sysroot f4f680a60e314418f95513ac63e9942ad565005ebbd36b660b20cd605d11a664"; do
+            read -r name sha256 <<< "$entry"
+            download="$RUNNER_TEMP/$name.tar.xz"
+            curl -fsSL --retry 3 -o "$download" "$SYSROOT_BASE/$sha256"
+            echo "$sha256  $download" | sha256sum --check --quiet -
+            mkdir -p "$sysroots/$name"
+            tar --no-same-owner -xJf "$download" -C "$sysroots/$name"
+            echo "Unpacked $name, SHA-256 $sha256."
+          done
+          printf '%s\n' "SYSROOTS=$sysroots" "LLVM=$llvm" >> "$GITHUB_ENV"
+
       - name: Build every declared addon for x64 and ARM64
         run: |
           set -euo pipefail
+          sysroots=${SYSROOTS:-/opt/noldova-sysroots}
+          llvm=${LLVM:-21}
           platform=$(node -p process.platform)
           if [ "$platform" = win32 ]; then key=windowsAddons; else key=posixAddons; fi
           node_gyp="$(npm root -g)/npm/node_modules/node-gyp/bin/node-gyp.js"
+          if [ ! -f "$node_gyp" ]; then
+            node_gyp=$(node -p 'const path = require("node:path"); const folder = path.dirname(process.execPath); path.join(process.platform === "win32" ? folder : path.join(folder, "..", "lib"), "node_modules", "npm", "node_modules", "node-gyp", "bin", "node-gyp.js")')
+            echo "npm's global folder has no npm, so the build takes node-gyp from the npm that ships with Node: $node_gyp"
+          fi
           headers="$RUNNER_TEMP/node-gyp"
           out="$RUNNER_TEMP/addons"
           mkdir -p "$out"
@@ -302,14 +329,14 @@ jobs:
                   cd "$work"
                   if [ "$platform" = linux ]; then
                     if [ "$arch" = arm64 ]; then
-                      cross="--target=aarch64-linux-gnu --sysroot=/opt/noldova-sysroots/debian_bullseye_arm64-sysroot"
+                      cross="--target=aarch64-linux-gnu --sysroot=$sysroots/debian_bullseye_arm64-sysroot"
                     else
-                      cross="--target=x86_64-linux-gnu --sysroot=/opt/noldova-sysroots/debian_bullseye_amd64-sysroot"
+                      cross="--target=x86_64-linux-gnu --sysroot=$sysroots/debian_bullseye_amd64-sysroot"
                     fi
-                    export CC="clang-21 $cross"
-                    export CXX="clang++-21 $cross"
-                    export LINK="clang++-21 $cross -fuse-ld=lld"
-                    export AR=llvm-ar-21
+                    export CC="clang-$llvm $cross"
+                    export CXX="clang++-$llvm $cross"
+                    export LINK="clang++-$llvm $cross -fuse-ld=lld"
+                    export AR=llvm-ar-$llvm
                   fi
                   node "$node_gyp" rebuild --arch="$arch" --loglevel=error --devdir="$headers"
                 )
