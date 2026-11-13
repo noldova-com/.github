@@ -37,6 +37,18 @@ on:
         description: Whether Linux jobs allow unprivileged user namespaces before the tests, as Chromium's sandbox needs, lifting the AppArmor restriction on GitHub's runners, and fail when the runner still refuses them
         type: boolean
         default: false
+      end-to-end:
+        description: Runs the repository's npm run test:<name> in a Linux x64 job of its own, such as e2e, after npm run build and end-to-end-prepare, under a virtual display, inside a D-Bus session with an unlocked Secret Service
+        type: string
+        default: ''
+      end-to-end-prepare:
+        description: A command the end-to-end job runs after npm run build and before the test, such as 'npm run install:app && npm run build:app'
+        type: string
+        default: ''
+      end-to-end-report:
+        description: A folder, relative to the checkout, that the end-to-end job keeps when the test fails, such as _build/e2e
+        type: string
+        default: ''
       timeout-minutes:
         description: The minutes each target's job may take
         type: number
@@ -383,6 +395,111 @@ jobs:
       - name: Check that tracked files are unchanged
         run: pipelines unchanged
 
+  end-to-end:
+    name: End-to-end test
+    needs: versions
+    if: ${{ !cancelled() && inputs.end-to-end != '' && needs.versions.result == 'success' }}
+    runs-on: ${{ fromJSON(needs.versions.outputs.runs-on-linux-x64) }}
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Check out the revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ needs.versions.outputs.node-version }}
+          package-manager-cache: false
+          registry-url: ${{ needs.versions.outputs.install-registry-url }}
+          scope: ${{ needs.versions.outputs.install-scope }}
+
+      - name: Build the packages
+        env:
+          NODE_AUTH_TOKEN: ${{ needs.versions.outputs.install-registry-url == 'https://npm.pkg.github.com' && github.token || '' }}
+        run: npm run build
+
+      - name: Install the pipelines tool
+        env:
+          NPM_CONFIG_USERCONFIG: ${{ runner.temp }}/pipelines-tool.npmrc
+          TOOL_FROM_SOURCE: ${{ inputs.tool-from-source }}
+        run: |
+          shopt -s failglob
+          tool="$PIPELINES_TOOL"
+          if [ "$TOOL_FROM_SOURCE" = true ]; then
+            mkdir "$RUNNER_TEMP/pipelines-archives"
+            cp _packages/*.tgz "$RUNNER_TEMP/pipelines-archives/"
+            tool="$(echo "$RUNNER_TEMP"/pipelines-archives/*.tgz)"
+          fi
+          npm install --prefix "$RUNNER_TEMP/pipelines-tool" --registry https://registry.npmjs.org/ --no-audit --no-fund $tool
+          echo "$RUNNER_TEMP/pipelines-tool/node_modules/.bin" >> "$GITHUB_PATH"
+
+      - name: Check the toolchain
+        env:
+          NODE_VERSION: ${{ needs.versions.outputs.node-version }}
+          NPM_VERSION: ${{ needs.versions.outputs.npm-version }}
+        run: pipelines toolchain "$NODE_VERSION" $NPM_VERSION
+
+      - name: Prepare the end-to-end test
+        if: inputs.end-to-end-prepare != ''
+        env:
+          NODE_AUTH_TOKEN: ${{ needs.versions.outputs.install-registry-url == 'https://npm.pkg.github.com' && github.token || '' }}
+          PREPARE: ${{ inputs.end-to-end-prepare }}
+        run: bash -euo pipefail -c "$PREPARE"
+
+      - name: Install the virtual display, the session bus and the Secret Service on GitHub's runner
+        if: runner.environment == 'github-hosted'
+        timeout-minutes: 5
+        run: |
+          sudo DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=600 update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=600 install -y --no-install-recommends xvfb xauth dbus-daemon dbus-bin gnome-keyring
+
+      - name: Allow unprivileged user namespaces, which Chromium's sandbox needs
+        if: inputs.unprivileged-user-namespaces
+        timeout-minutes: 1
+        env:
+          HOSTED: ${{ runner.environment == 'github-hosted' }}
+        run: |
+          if [ "$HOSTED" = true ] && [ "$(sysctl -n kernel.apparmor_restrict_unprivileged_userns 2>/dev/null)" = 1 ]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+          if ! unshare -Ur true; then
+            echo "::error::This runner refuses unprivileged user namespaces, so Chromium's sandbox can't start without its setuid helper."
+            exit 1
+          fi
+          echo "Unprivileged user namespaces are allowed, so Chromium's sandbox starts without its setuid helper."
+
+      - name: Run the end-to-end test
+        env:
+          END_TO_END: ${{ inputs.end-to-end }}
+        run: |
+          for program in xvfb-run dbus-run-session gnome-keyring-daemon; do
+            if ! command -v "$program" >/dev/null; then
+              echo "::error::This runner has no $program, which the end-to-end test runs under."
+              exit 1
+            fi
+          done
+          mkdir -p "$RUNNER_TEMP/keyring-data/keyrings"
+          mkdir -m 700 "$RUNNER_TEMP/keyring-control"
+          printf login > "$RUNNER_TEMP/keyring-data/keyrings/default"
+          xvfb-run --auto-servernum --server-args='-screen 0 1920x1080x24' dbus-run-session -- sh -c 'echo | XDG_DATA_HOME="$RUNNER_TEMP/keyring-data" gnome-keyring-daemon --unlock --components=secrets --control-directory="$RUNNER_TEMP/keyring-control" >/dev/null && npm run "test:$END_TO_END"'
+
+      - name: Keep the end-to-end test's report
+        if: failure() && inputs.end-to-end-report != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: end-to-end-report-${{ github.run_attempt }}
+          path: ${{ inputs.end-to-end-report }}
+          if-no-files-found: ignore
+          retention-days: ${{ needs.versions.outputs.retention-days }}
+
+      - name: Check that tracked files are unchanged
+        run: pipelines unchanged
+
   merge-parts:
     name: Merge the parts of ${{ matrix.name }}
     needs: [versions, plan, build-and-test]
@@ -420,7 +537,7 @@ jobs:
 
   all-targets:
     name: All targets
-    needs: [versions, plan, build-and-test, separate-test, merge-parts]
+    needs: [versions, plan, build-and-test, separate-test, end-to-end, merge-parts]
     if: always()
     runs-on: ${{ fromJSON(needs.versions.outputs.runs-on-linux-x64) }}
     timeout-minutes: 5
@@ -433,13 +550,16 @@ jobs:
           PLAN_RESULT: ${{ needs.plan.result }}
           SEPARATE_RESULT: ${{ needs.separate-test.result }}
           MERGE_RESULT: ${{ needs.merge-parts.result }}
+          END_TO_END_RESULT: ${{ needs.end-to-end.result }}
           PLANNED: ${{ inputs.shards != '' || inputs.separate-test != '' || inputs.shard-outputs != '' }}
           SEPARATE: ${{ inputs.separate-test != '' }}
           MERGED: ${{ inputs.shard-outputs != '' }}
+          END_TO_END: ${{ inputs.end-to-end != '' }}
         run: |
-          echo "The versions' result: $VERSIONS_RESULT; the plan's: $PLAN_RESULT; the targets': $RESULT; the separate test's: $SEPARATE_RESULT; the merges': $MERGE_RESULT"
+          echo "The versions' result: $VERSIONS_RESULT; the plan's: $PLAN_RESULT; the targets': $RESULT; the separate test's: $SEPARATE_RESULT; the end-to-end test's: $END_TO_END_RESULT; the merges': $MERGE_RESULT"
           test "$VERSIONS_RESULT" = success
           test "$RESULT" = success
           if [ "$PLANNED" = true ]; then test "$PLAN_RESULT" = success; fi
           if [ "$SEPARATE" = true ]; then test "$SEPARATE_RESULT" = success; fi
           if [ "$MERGED" = true ]; then test "$MERGE_RESULT" = success; fi
+          if [ "$END_TO_END" = true ]; then test "$END_TO_END_RESULT" = success; fi
