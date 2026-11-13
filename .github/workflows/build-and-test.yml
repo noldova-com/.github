@@ -33,6 +33,10 @@ on:
         description: Runs the repository's npm run test:<name> in a Linux x64 job of its own, such as docs, and gives each target's tests NOLDOVA_SEPARATE_TEST=<name>, so that its npm run test leaves that part out
         type: string
         default: ''
+      unprivileged-user-namespaces:
+        description: Whether Linux jobs allow unprivileged user namespaces before the tests, as Chromium's sandbox needs, lifting the AppArmor restriction on GitHub's runners, and fail when the runner still refuses them
+        type: boolean
+        default: false
       timeout-minutes:
         description: The minutes each target's job may take
         type: number
@@ -257,6 +261,21 @@ jobs:
       - name: Check the line endings
         run: pipelines line-endings
 
+      - name: Allow unprivileged user namespaces, which Chromium's sandbox needs
+        if: inputs.unprivileged-user-namespaces && runner.os == 'Linux'
+        timeout-minutes: 1
+        env:
+          HOSTED: ${{ runner.environment == 'github-hosted' }}
+        run: |
+          if [ "$HOSTED" = true ] && [ "$(sysctl -n kernel.apparmor_restrict_unprivileged_userns 2>/dev/null)" = 1 ]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+          if ! unshare -Ur true; then
+            echo "::error::This runner refuses unprivileged user namespaces, so Chromium's sandbox can't start without its setuid helper."
+            exit 1
+          fi
+          echo "Unprivileged user namespaces are allowed, so Chromium's sandbox starts without its setuid helper."
+
       - name: Test the packages
         env:
           NOLDOVA_SEPARATE_TEST: ${{ inputs.separate-test }}
@@ -340,6 +359,21 @@ jobs:
           NODE_VERSION: ${{ needs.versions.outputs.node-version }}
           NPM_VERSION: ${{ needs.versions.outputs.npm-version }}
         run: pipelines toolchain "$NODE_VERSION" $NPM_VERSION
+
+      - name: Allow unprivileged user namespaces, which Chromium's sandbox needs
+        if: inputs.unprivileged-user-namespaces && runner.os == 'Linux'
+        timeout-minutes: 1
+        env:
+          HOSTED: ${{ runner.environment == 'github-hosted' }}
+        run: |
+          if [ "$HOSTED" = true ] && [ "$(sysctl -n kernel.apparmor_restrict_unprivileged_userns 2>/dev/null)" = 1 ]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+          if ! unshare -Ur true; then
+            echo "::error::This runner refuses unprivileged user namespaces, so Chromium's sandbox can't start without its setuid helper."
+            exit 1
+          fi
+          echo "Unprivileged user namespaces are allowed, so Chromium's sandbox starts without its setuid helper."
 
       - name: Run the separate test
         env:
