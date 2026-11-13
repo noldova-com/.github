@@ -266,10 +266,10 @@ jobs:
             npm run "$script"
           done
 
-      - name: Install the keyring on GitHub's runner
+      - name: Install the virtual display, the session bus and the keyring on GitHub's runner
         if: inputs.display && runner.os == 'Linux' && runner.environment == 'github-hosted'
         timeout-minutes: 5
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends gnome-keyring
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends xvfb xauth dbus-daemon dbus-bin gnome-keyring
 
       - name: Run the tests
         env:
@@ -286,10 +286,15 @@ jobs:
           read -r -a reports <<< "$REPORTS"
           command=(npm run "$SCRIPT" -- ${filters[@]+"${filters[@]}"})
           keyring=false
+          xvfb=
+          trap 'if [ -n "$xvfb" ]; then kill "$xvfb" 2>/dev/null; fi' EXIT
           if [ "$VIRTUAL_DISPLAY" = true ] && [ "$RUNNER_OS" = Linux ]; then
             command -v gnome-keyring-daemon >/dev/null || { echo "::error::gnome-keyring isn't installed on this runner; display mode needs it."; exit 1; }
+            for program in Xvfb xauth dbus-run-session; do
+              command -v "$program" >/dev/null || { echo "::error::This runner has no $program, which display mode runs each run under."; exit 1; }
+            done
             keyring=true
-            command=(xvfb-run --auto-servernum --server-args='-screen 0 1920x1080x24' dbus-run-session -- sh -c 'echo | XDG_DATA_HOME="$KEYRING/data" gnome-keyring-daemon --unlock --components=secrets --control-directory="$KEYRING/control" >/dev/null && exec "$@"' sh "${command[@]}")
+            command=(dbus-run-session -- sh -c 'echo | XDG_DATA_HOME="$KEYRING/data" gnome-keyring-daemon --unlock --components=secrets --control-directory="$KEYRING/control" >/dev/null && exec "$@"' sh "${command[@]}")
           fi
           mkdir -p _build/flake-proof
           passed=0
@@ -301,6 +306,23 @@ jobs:
               mkdir -p "$KEYRING/data/keyrings"
               mkdir -m 700 "$KEYRING/control"
               printf login > "$KEYRING/data/keyrings/default"
+              # Each run gets a new Xvfb on a display it picks itself with -displayfd, so jobs sharing a machine never race for one,
+              # open only to a new cookie. Xvfb takes every cookie in its -auth file whatever display the entry names,
+              # so the cookie goes in under :0 before the display is known, and under the display Xvfb picks once it is.
+              export XAUTHORITY="$KEYRING/xauthority"
+              cookie=$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')
+              xauth -q add :0 . "$cookie"
+              mkfifo "$KEYRING/display"
+              Xvfb -displayfd 3 -auth "$XAUTHORITY" -screen 0 1920x1080x24 -nolisten tcp 3> "$KEYRING/display" &
+              xvfb=$!
+              display=
+              read -r -t 30 display < "$KEYRING/display" || true
+              if [ -z "$display" ]; then
+                echo "::error::Xvfb didn't start for run $run, so the run has no display."
+                exit 1
+              fi
+              xauth -q add ":$display" . "$cookie"
+              export DISPLAY=":$display"
             fi
             if "${command[@]}" > "$log" 2>&1; then
               passed=$(( passed + 1 ))
@@ -309,6 +331,11 @@ jobs:
               failed=$(( failed + 1 ))
               echo "::error::Run $run failed; its log is kept in the job's artifact."
               tail -n 60 "$log"
+            fi
+            if [ -n "$xvfb" ]; then
+              kill "$xvfb" 2>/dev/null
+              wait "$xvfb" 2>/dev/null
+              xvfb=
             fi
             for folder in ${reports[@]+"${reports[@]}"}; do
               if [ -e "$folder" ]; then
