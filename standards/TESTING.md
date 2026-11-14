@@ -55,6 +55,12 @@ A test that fails because it waits a fixed time, or must finish within one, is a
   It is labelled as a timing test and states why that time, including what a busy machine does to it; a time without its reason doesn't pass review.
 - **Wait on events or conditions, never a fixed sleep.**
   A limit only bounds a hang: it is generous and is never what the test checks.
+- **The code's own timers are set by the test.**
+  A grace period, debounce, interval or timeout in the code under test that decides which path runs is injected and set by the test, or runs on a scoped mock clock ([Execution and isolation](#execution-and-isolation)), so each path is reached on purpose and a busy machine never picks one.
+- **A hang limit is measured, never guessed.**
+  Each suite has one limit, with its reason: at least three times its slowest run on any target platform, read from main's runs.
+  It is never raised to make a slow run pass; a test that reaches it is a bug to fix.
+- **A test that reaches its limit is named** in the run's output, with what it waited for; a run that reports a limit without the test's identity is a defect in the runner.
 - **A polling wait is bounded** and fails with a message that says what it waited for.
 - **Fixed pauses are listed.** Test code pauses for a fixed time only in the files the repository's README lists in its Checks section, each with its reason; review refuses one anywhere else.
 - **No retries in test code,** and no deadline as a pass condition outside a timing test.
