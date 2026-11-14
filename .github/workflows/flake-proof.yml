@@ -301,18 +301,7 @@ jobs:
             command=(dbus-run-session -- sh -c 'echo | XDG_DATA_HOME="$KEYRING/data" gnome-keyring-daemon --unlock --components=secrets --control-directory="$KEYRING/control" >/dev/null && exec "$@"' sh "${command[@]}")
           fi
           # Each run may take an even share of the job's time still left, keeping three minutes for the artifact, so a run that hangs is named and counted as failed
-          # before the job's timeout-minutes end the job unnamed; a runner with neither timeout nor gtimeout, such as a stock macOS one, runs without that limit.
-          limiter=
-          for candidate in timeout gtimeout; do
-            # Only GNU coreutils' timeout, not Windows' own timeout.exe, which only waits.
-            if command -v "$candidate" >/dev/null && "$candidate" --version 2>/dev/null | grep coreutils >/dev/null; then
-              limiter=$candidate
-              break
-            fi
-          done
-          if [ -z "$limiter" ]; then
-            echo "::notice::This runner has neither timeout nor gtimeout, so a run that hangs is ended only by the job's timeout-minutes, without its number."
-          fi
+          # before the job's timeout-minutes end the job unnamed. A watchdog in this shell bounds it, on every runner, since not every runner has GNU timeout.
           mkdir -p _build/flake-proof
           passed=0
           failed=0
@@ -342,21 +331,34 @@ jobs:
               xauth -q add ":$display" . "$cookie"
               export DISPLAY=":$display"
             fi
-            status=0
-            if [ -n "$limiter" ]; then
-              limit=$(( (JOB_MINUTES * 60 - ($(date +%s) - JOB_STARTED) - 180) / (RUNS - run + 1) - 30 ))
-              if [ "$limit" -lt 60 ]; then
-                echo "::error::The job's timeout-minutes leave run $run $limit seconds; raise timeout-minutes or lower runs."
-                exit 1
-              fi
-              "$limiter" --kill-after=30 "$limit" "${command[@]}" > "$log" 2>&1 || status=$?
-            else
-              "${command[@]}" > "$log" 2>&1 || status=$?
+            limit=$(( (JOB_MINUTES * 60 - ($(date +%s) - JOB_STARTED) - 180) / (RUNS - run + 1) - 30 ))
+            if [ "$limit" -lt 60 ]; then
+              echo "::error::The job's timeout-minutes leave run $run $limit seconds; raise timeout-minutes or lower runs."
+              exit 1
             fi
-            if [ "$status" = 0 ]; then
+            reached="$RUNNER_TEMP/flake-proof-limit-$JOB-$run"
+            status=0
+            "${command[@]}" > "$log" 2>&1 &
+            pid=$!
+            # The watchdog sends TERM at the limit and KILL 30 seconds later; its own sleeps go when it is stopped, so nothing outlives the run.
+            (
+              trap 'kill "$nap" 2>/dev/null; exit 0' TERM
+              sleep "$limit" & nap=$!
+              wait "$nap"
+              touch "$reached"
+              kill -TERM "$pid" 2>/dev/null
+              sleep 30 & nap=$!
+              wait "$nap"
+              kill -KILL "$pid" 2>/dev/null
+            ) > /dev/null 2>&1 &
+            watchdog=$!
+            wait "$pid" || status=$?
+            kill -TERM "$watchdog" 2>/dev/null || true
+            wait "$watchdog" 2>/dev/null || true
+            if [ "$status" = 0 ] && [ ! -e "$reached" ]; then
               passed=$(( passed + 1 ))
               echo "Run $run passed."
-            elif [ -n "$limiter" ] && { [ "$status" = 124 ] || [ "$status" = 137 ]; }; then
+            elif [ -e "$reached" ]; then
               failed=$(( failed + 1 ))
               echo "::error::Run $run reached its limit of $limit seconds and was stopped; its log is kept in the job's artifact."
               tail -n 60 "$log"

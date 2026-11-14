@@ -392,7 +392,7 @@ jobs:
 
   Before it installs anything, each job checks that `script` and every `prepare` script are npm scripts in the package's `package.json`, and fails otherwise.
 - A test job may take `timeout-minutes`, 120 by default and up to 360, which a caller with a slow suite raises.
-  Each run may take an even share of the job's time still left, keeping three minutes for the artifact, so a run that hangs is stopped, named with `::error` as "Run <n> reached its limit of <seconds> seconds" and counted as failed before the job's timeout ends the job without naming it; the job fails at once when a run's share is under a minute. The limit runs through GNU coreutils' `timeout`, or `gtimeout`; on a runner with neither, such as a stock macOS one, runs have no limit of their own and the job says so with a notice.
+  Each run may take an even share of the job's time still left, keeping three minutes for the artifact, so a run that hangs is stopped, named with `::error` as "Run <n> reached its limit of <seconds> seconds" and counted as failed before the job's timeout ends the job without naming it; the job fails at once when a run's share is under a minute. A watchdog in the job's own shell bounds each run on every runner, sending `TERM` at the limit and `KILL` 30 seconds later, since not every runner has GNU coreutils' `timeout`.
 - The jobs install from the registries and run on the runners [Shared settings](#shared-settings) names; a private repository's jobs read the organization's private packages from GitHub's registry with the run's own token, which `packages: read` allows, and a public repository's jobs hand npm no token.
 - The caller grants `contents: read` and `packages: read`, since a called job gets no permission its caller didn't grant.
 
