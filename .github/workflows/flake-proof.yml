@@ -200,6 +200,9 @@ jobs:
       matrix:
         include: ${{ fromJSON(needs.plan.outputs.matrix) }}
     steps:
+      - name: Note when the job started
+        run: echo "JOB_STARTED=$(date +%s)" >> "$GITHUB_ENV"
+
       - name: Check out the tested revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -280,6 +283,7 @@ jobs:
           RUNS: ${{ matrix.runs }}
           TARGET: ${{ matrix.target }}
           JOB: ${{ matrix.job }}
+          JOB_MINUTES: ${{ inputs.timeout-minutes }}
         run: |
           set -uo pipefail
           read -r -a filters <<< "$FILTER"
@@ -295,6 +299,19 @@ jobs:
             done
             keyring=true
             command=(dbus-run-session -- sh -c 'echo | XDG_DATA_HOME="$KEYRING/data" gnome-keyring-daemon --unlock --components=secrets --control-directory="$KEYRING/control" >/dev/null && exec "$@"' sh "${command[@]}")
+          fi
+          # Each run may take an even share of the job's time still left, keeping three minutes for the artifact, so a run that hangs is named and counted as failed
+          # before the job's timeout-minutes end the job unnamed; a runner with neither timeout nor gtimeout, such as a stock macOS one, runs without that limit.
+          limiter=
+          for candidate in timeout gtimeout; do
+            # Only GNU coreutils' timeout, not Windows' own timeout.exe, which only waits.
+            if command -v "$candidate" >/dev/null && "$candidate" --version 2>/dev/null | grep coreutils >/dev/null; then
+              limiter=$candidate
+              break
+            fi
+          done
+          if [ -z "$limiter" ]; then
+            echo "::notice::This runner has neither timeout nor gtimeout, so a run that hangs is ended only by the job's timeout-minutes, without its number."
           fi
           mkdir -p _build/flake-proof
           passed=0
@@ -325,9 +342,24 @@ jobs:
               xauth -q add ":$display" . "$cookie"
               export DISPLAY=":$display"
             fi
-            if "${command[@]}" > "$log" 2>&1; then
+            status=0
+            if [ -n "$limiter" ]; then
+              limit=$(( (JOB_MINUTES * 60 - ($(date +%s) - JOB_STARTED) - 180) / (RUNS - run + 1) - 30 ))
+              if [ "$limit" -lt 60 ]; then
+                echo "::error::The job's timeout-minutes leave run $run $limit seconds; raise timeout-minutes or lower runs."
+                exit 1
+              fi
+              "$limiter" --kill-after=30 "$limit" "${command[@]}" > "$log" 2>&1 || status=$?
+            else
+              "${command[@]}" > "$log" 2>&1 || status=$?
+            fi
+            if [ "$status" = 0 ]; then
               passed=$(( passed + 1 ))
               echo "Run $run passed."
+            elif [ -n "$limiter" ] && { [ "$status" = 124 ] || [ "$status" = 137 ]; }; then
+              failed=$(( failed + 1 ))
+              echo "::error::Run $run reached its limit of $limit seconds and was stopped; its log is kept in the job's artifact."
+              tail -n 60 "$log"
             else
               failed=$(( failed + 1 ))
               echo "::error::Run $run failed; its log is kept in the job's artifact."
