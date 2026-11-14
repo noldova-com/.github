@@ -272,7 +272,7 @@ jobs:
       - name: Install the virtual display, the session bus and the keyring on GitHub's runner
         if: inputs.display && runner.os == 'Linux' && runner.environment == 'github-hosted'
         timeout-minutes: 5
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends xvfb xauth dbus-daemon dbus-bin gnome-keyring
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends xvfb xauth dbus-daemon dbus-bin gnome-keyring libglib2.0-bin
 
       - name: Run the tests
         env:
@@ -294,11 +294,11 @@ jobs:
           trap 'if [ -n "$xvfb" ]; then kill "$xvfb" 2>/dev/null || true; fi' EXIT
           if [ "$VIRTUAL_DISPLAY" = true ] && [ "$RUNNER_OS" = Linux ]; then
             command -v gnome-keyring-daemon >/dev/null || { echo "::error::gnome-keyring isn't installed on this runner; display mode needs it."; exit 1; }
-            for program in Xvfb xauth dbus-run-session; do
+            for program in Xvfb xauth dbus-run-session gdbus; do
               command -v "$program" >/dev/null || { echo "::error::This runner has no $program, which display mode runs each run under."; exit 1; }
             done
             keyring=true
-            command=(dbus-run-session -- sh -c 'echo | XDG_DATA_HOME="$KEYRING/data" gnome-keyring-daemon --unlock --components=secrets --control-directory="$KEYRING/control" >/dev/null && exec "$@"' sh "${command[@]}")
+            command=(dbus-run-session -- sh -c 'echo | XDG_DATA_HOME="$KEYRING/data" gnome-keyring-daemon --unlock --components=secrets --control-directory="$KEYRING/control" >/dev/null && { gdbus wait --session --timeout 30 org.freedesktop.secrets || { echo "The unlocked keyring did not take org.freedesktop.secrets on the session bus within 30 seconds."; touch "$KEYRING/no-secret-service"; exit 1; }; } && exec "$@"' sh "${command[@]}")
           fi
           # Each run may take an even share of the job's time still left, keeping three minutes for the artifact, so a run that hangs is named and counted as failed
           # before the job's timeout-minutes end the job unnamed. A watchdog in this shell bounds it, on every runner, since not every runner has GNU timeout.
@@ -355,6 +355,11 @@ jobs:
             wait "$pid" || status=$?
             kill -TERM "$watchdog" 2>/dev/null || true
             wait "$watchdog" 2>/dev/null || true
+            if [ "$keyring" = true ] && [ -e "$KEYRING/no-secret-service" ]; then
+              # The runner's keyring, not the test, failed: that is no flake, so the job ends here, as when Xvfb doesn't start.
+              echo "::error::The unlocked keyring did not take org.freedesktop.secrets on the session bus within 30 seconds for run $run, so the run's test never started; its log is kept in the job's artifact."
+              exit 1
+            fi
             if [ "$status" = 0 ] && [ ! -e "$reached" ]; then
               passed=$(( passed + 1 ))
               echo "Run $run passed."

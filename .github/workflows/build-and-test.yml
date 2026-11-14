@@ -459,7 +459,7 @@ jobs:
         timeout-minutes: 5
         run: |
           sudo DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=600 update
-          sudo DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=600 install -y --no-install-recommends xvfb xauth dbus-daemon dbus-bin gnome-keyring
+          sudo DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=600 install -y --no-install-recommends xvfb xauth dbus-daemon dbus-bin gnome-keyring libglib2.0-bin
 
       - name: Allow unprivileged user namespaces, which Chromium's sandbox needs
         if: inputs.unprivileged-user-namespaces
@@ -481,7 +481,7 @@ jobs:
           END_TO_END: ${{ inputs.end-to-end }}
           JOB_MINUTES: ${{ inputs.timeout-minutes }}
         run: |
-          for program in Xvfb xauth dbus-run-session gnome-keyring-daemon; do
+          for program in Xvfb xauth dbus-run-session gdbus gnome-keyring-daemon; do
             if ! command -v "$program" >/dev/null; then
               echo "::error::This runner has no $program, which the end-to-end test runs under."
               exit 1
@@ -500,6 +500,7 @@ jobs:
           # Only a client holding the cookie may use the display. Xvfb takes every cookie in its -auth file whatever display the entry names,
           # so the cookie goes in under :0 before the display is known, and under the display Xvfb picks once it is.
           export XAUTHORITY="$RUNNER_TEMP/xvfb-auth"
+          touch "$XAUTHORITY"
           cookie=$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')
           xauth -q add :0 . "$cookie"
           mkfifo "$RUNNER_TEMP/xvfb-display"
@@ -515,7 +516,7 @@ jobs:
           xauth -q add ":$display" . "$cookie"
           echo "Xvfb serves display :$display; the test may run for $limit seconds."
           status=0
-          DISPLAY=":$display" timeout --kill-after=30 "$limit" dbus-run-session -- sh -c 'echo | XDG_DATA_HOME="$RUNNER_TEMP/keyring-data" gnome-keyring-daemon --unlock --components=secrets --control-directory="$RUNNER_TEMP/keyring-control" >/dev/null && npm run "test:$END_TO_END"' || status=$?
+          DISPLAY=":$display" timeout --kill-after=30 "$limit" dbus-run-session -- sh -c 'echo | XDG_DATA_HOME="$RUNNER_TEMP/keyring-data" gnome-keyring-daemon --unlock --components=secrets --control-directory="$RUNNER_TEMP/keyring-control" >/dev/null && { gdbus wait --session --timeout 30 org.freedesktop.secrets || { echo "::error::The unlocked keyring did not take org.freedesktop.secrets on the session bus within 30 seconds."; exit 1; }; } && npm run "test:$END_TO_END"' || status=$?
           if [ "$status" = 124 ] || [ "$status" = 137 ]; then
             echo "::error::The end-to-end test ran past its $limit seconds and was stopped, three minutes before the job's timeout."
           fi
