@@ -132,7 +132,7 @@ Code that no input can reach is removed, not covered: needing a deliberately bro
 
 ## Asynchronous work and processes
 
-- Use the asynchronous API for file, network and process work wherever one exists; a blocking call is allowed only in a short-lived command-line process.
+- Use the asynchronous API for file, network and process work wherever one exists; a blocking call is allowed only in a short-lived command-line process, or before an Electron app is ready for what its before-ready calls depend on.
 - Every asynchronous operation has an owner that observes its completion and errors.
   Background work has an explicit lifetime and failure path; no unobserved rejections or callback failures.
 - Operations that can stall have documented deadlines and cancellation.
