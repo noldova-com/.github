@@ -272,7 +272,7 @@ jobs:
 
       - &browser-cache
         name: Restore Playwright's browsers, kept by their Playwright versions
-        if: steps.browser.outputs.key != ''
+        if: false
         timeout-minutes: 5
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
