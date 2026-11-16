@@ -281,6 +281,7 @@ jobs:
 
       - name: Build the packages
         env:
+          PLAYWRIGHT_DOWNLOAD_HOST: https://download.invalid
           NODE_AUTH_TOKEN: ${{ needs.versions.outputs.install-registry-url == 'https://npm.pkg.github.com' && github.token || '' }}
         run: npm run build
 
@@ -387,6 +388,7 @@ jobs:
 
       - name: Build the packages
         env:
+          PLAYWRIGHT_DOWNLOAD_HOST: https://download.invalid
           NODE_AUTH_TOKEN: ${{ needs.versions.outputs.install-registry-url == 'https://npm.pkg.github.com' && github.token || '' }}
         run: npm run build
 
@@ -466,6 +468,7 @@ jobs:
 
       - name: Build the packages
         env:
+          PLAYWRIGHT_DOWNLOAD_HOST: https://download.invalid
           NODE_AUTH_TOKEN: ${{ needs.versions.outputs.install-registry-url == 'https://npm.pkg.github.com' && github.token || '' }}
         run: npm run build
 
