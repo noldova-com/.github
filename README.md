@@ -484,7 +484,7 @@ jobs:
 
 [versions.yml](.github/workflows/versions.yml) holds the settings every shared workflow uses in one place: the Node and npm versions, the registries to install from and publish to, how long artifacts are kept, and the runners; each shared workflow's first job calls it, and its other jobs take the settings from its outputs, so a caller names none:
 
-- The Node version is `24.21.0`, and the npm version that comes with it, `11.19.0`, is checked after setup.
+- The Node version is `26.13.1`, and the npm version that comes with it, `11.20.0`, is checked after setup.
 - A private repository installs the `@noldova-com` scope's packages from GitHub's registry, `https://npm.pkg.github.com`, and every other package from npm's registry; a public repository installs every package from npm's registry, with no token.
 - A release from a public repository publishes `@noldova` packages to npm's registry, `https://registry.npmjs.org`, with public access; from a private repository, `@noldova-com` packages to GitHub's registry with restricted access.
 - A private repository's artifacts are kept for 1 day, a public repository's for 7.
@@ -493,7 +493,7 @@ jobs:
 
 A caller overrides any of them for its own runs:
 
-- `node-version` takes an exact version, such as `24.21.0`; with it, npm is checked only when `npm-version` names the version too.
+- `node-version` takes an exact version, such as `26.13.1`; with it, npm is checked only when `npm-version` names the version too.
 - `install-registry-url` and `install-scope` go together: the install reads that scope's packages from that registry, and the run's token goes only to GitHub's registry.
 - `retention-days` takes 1 to 90.
 - A release's `publish-registry-url`, `publish-scope` and `publish-access` take a registry's https address, a scope and `public` or `restricted`.

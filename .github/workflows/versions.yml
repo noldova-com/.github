@@ -14,11 +14,11 @@ on:
         type: string
         default: ''
       node-version:
-        description: The Node version, such as 24.21.0; empty takes the default below
+        description: The Node version, such as 26.13.1; empty takes the default below
         type: string
         default: ''
       npm-version:
-        description: The npm version that comes with that Node, such as 11.19.0; empty takes the default below, or checks none when node-version is given
+        description: The npm version that comes with that Node, such as 11.20.0; empty takes the default below, or checks none when node-version is given
         type: string
         default: ''
       install-registry-url:
@@ -123,8 +123,8 @@ defaults:
     shell: bash
 
 env:
-  NODE_VERSION: '24.21.0'
-  NPM_VERSION: '11.19.0'
+  NODE_VERSION: '26.13.1'
+  NPM_VERSION: '11.20.0'
   PRIVATE_REGISTRY_URL: https://npm.pkg.github.com
   PRIVATE_SCOPE: '@noldova-com'
   PUBLIC_REGISTRY_URL: https://registry.npmjs.org
@@ -192,11 +192,11 @@ jobs:
         run: |
           set -euo pipefail
           if ! [[ "$NODE" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "::error::The Node version \"$NODE\" is not an exact version, such as 24.21.0."
+            echo "::error::The Node version \"$NODE\" is not an exact version, such as 26.13.1."
             exit 1
           fi
           if [ -n "$NPM" ] && ! [[ "$NPM" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "::error::The npm version \"$NPM\" is not an exact version, such as 11.19.0."
+            echo "::error::The npm version \"$NPM\" is not an exact version, such as 11.20.0."
             exit 1
           fi
           registry="$REGISTRY_INPUT"
