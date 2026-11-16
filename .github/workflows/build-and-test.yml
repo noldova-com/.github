@@ -267,8 +267,8 @@ jobs:
           folder="$RUNNER_TEMP/ms-playwright"
           echo "PLAYWRIGHT_BROWSERS_PATH=$folder" >> "$GITHUB_ENV"
           echo "folder=$folder" >> "$GITHUB_OUTPUT"
-          echo "key=playwright-browsers-$RUNNER_OS-$RUNNER_ARCH-$versions" >> "$GITHUB_OUTPUT"
-          echo "Playwright's browsers go in $folder, kept as playwright-browsers-$RUNNER_OS-$RUNNER_ARCH-$versions."
+          echo "key=playwright-chromium-headless-shell-$RUNNER_OS-$RUNNER_ARCH-$versions" >> "$GITHUB_OUTPUT"
+          echo "Playwright's browsers go in $folder, kept as playwright-chromium-headless-shell-$RUNNER_OS-$RUNNER_ARCH-$versions."
 
       - &browser-cache
         name: Restore Playwright's browsers, kept by their Playwright versions
