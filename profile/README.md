@@ -46,7 +46,7 @@ They work on your computer, and they ask you before they do anything you haven't
 - **See the changes, keep the control.** Approve what each agent runs, stop any reply, and see every file a reply changed. Don't like it? Put the files back.
 - **Bring the agents you already use.** TeamRun runs them on your own subscriptions, signed in as you already are. It includes no AI subscription: plans, usage limits and charges stay with each provider.
 
-TeamRun runs on Windows, macOS and Linux, on x64 and ARM64, including Macs with Apple Silicon or Intel.
+TeamRun runs on Windows and Linux, on x64 and ARM64, and on Macs with Apple Silicon or Intel.
 
 **[Download TeamRun](https://teamrun.noldova.com/download)** · [Get started](https://teamrun.noldova.com/docs)
 
