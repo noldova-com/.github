@@ -30,11 +30,11 @@ on:
         type: string
         default: ''
       node-version:
-        description: Overrides the Node version versions.yml names, such as 24.21.0
+        description: Overrides the Node version versions.yml names, such as 26.13.1
         type: string
         default: ''
       npm-version:
-        description: Overrides the npm version versions.yml names, such as 11.19.0
+        description: Overrides the npm version versions.yml names, such as 11.20.0
         type: string
         default: ''
       install-registry-url:
