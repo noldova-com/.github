@@ -169,7 +169,8 @@ tests/services/snapshot-tracker.test.ts
   Its name is the scope followed by its folder's name after `noldova.`: `noldova.context.text` is `@noldova/context.text`.
   A public repository's packages take the `@noldova/` scope on npm's registry, and a private one's `@noldova-com/` on GitHub's.
   A private repository's packages take the same lowercase folders, such as `noldova.example.shell`, but take hyphenated names, their folder's name after `noldova.` with hyphens for its dots, such as `@noldova-com/example-shell`, until the repository goes public, and then take their names from their folders with the `@noldova/` scope.
-- The project's own scripts build the packages: each is built into `_build/packages/<folder name>`, packed with `npm pack` into `_packages/`, and installed from there with `npm install --no-save`, so the repository's own packages never enter its manifest or lockfile.
+- The project's own scripts build the packages: each is built into `_build/packages/<folder name>`, packed with `npm pack` into `_packages/`, and installed from there with `npm install --no-save`, so a library's or a test's own packages never enter its manifest or lockfile.
+  An app built on Desktop instead pins its own repository's packages in its one lock, as `file:` archives from `_packages/`, so that one lock covers the whole app, and publishes none of them; a library repository and every test keep installing with `--no-save`, outside the lock.
   No third-party build or packaging tool does this.
 - A package's public test helpers live in `src/testing/`, a source tree beside `src/app/` with the same concept categories.
   Only the package's testing entry, `src/api/testing.ts`, reaches them, so an app's bundle never takes them, and no other entry imports them or the test runner.
