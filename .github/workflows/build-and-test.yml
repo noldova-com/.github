@@ -491,7 +491,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJSON(inputs.end-to-end-shards != '' && needs.plan.outputs.end-to-end-parts || '[{}]') }}
+        include: ${{ fromJSON(inputs.end-to-end-shards != '' && needs.plan.outputs.end-to-end-parts || '[{"part":""}]') }}
     steps:
       - name: Note when the job started
         run: echo "JOB_STARTED=$(date +%s)" >> "$GITHUB_ENV"
