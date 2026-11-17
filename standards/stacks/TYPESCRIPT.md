@@ -168,7 +168,7 @@ tests/services/snapshot-tracker.test.ts
 - Each package has its own `package.json` beside its source, with its name, version and entry points.
   Its name is the scope followed by its folder's name after `noldova.`: `noldova.context.text` is `@noldova/context.text`.
   A public repository's packages take the `@noldova/` scope on npm's registry, and a private one's `@noldova-com/` on GitHub's.
-  A private repository's packages keep their PascalCase folders and hyphenated names, such as `Noldova.Example.Shell` and `@noldova-com/example-shell`, until the repository goes public, and take this form with their `@noldova/` names.
+  A private repository's packages take the same lowercase folders, such as `noldova.example.shell`, but take hyphenated names, their folder's name after `noldova.` with hyphens for its dots, such as `@noldova-com/example-shell`, until the repository goes public, and then take their names from their folders with the `@noldova/` scope.
 - The project's own scripts build the packages: each is built into `_build/packages/<folder name>`, packed with `npm pack` into `_packages/`, and installed from there with `npm install --no-save`, so the repository's own packages never enter its manifest or lockfile.
   No third-party build or packaging tool does this.
 - A package's public test helpers live in `src/testing/`, a source tree beside `src/app/` with the same concept categories.
