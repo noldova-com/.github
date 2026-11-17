@@ -49,6 +49,10 @@ on:
         description: A command the end-to-end job runs after npm run build and before the test, such as 'npm run install:app && npm run build:app'
         type: string
         default: ''
+      end-to-end-shards:
+        description: Splits the end-to-end test into parts, from 2 to 8, each a Linux x64 job of its own, such as 2; the repository's npm run test:<end-to-end> takes --shard=<part>/<parts>; it needs end-to-end
+        type: string
+        default: ''
       end-to-end-report:
         description: A folder, relative to the checkout, that the end-to-end job keeps when the test fails or is cancelled, such as _build/e2e
         type: string
@@ -129,13 +133,14 @@ jobs:
   plan:
     name: Plan the parts
     needs: versions
-    if: inputs.shards != '' || inputs.separate-test != '' || inputs.shard-outputs != '' || inputs.separate-test-report != ''
+    if: inputs.shards != '' || inputs.separate-test != '' || inputs.shard-outputs != '' || inputs.separate-test-report != '' || inputs.end-to-end-shards != ''
     runs-on: ${{ fromJSON(needs.versions.outputs.runs-on-linux-x64) }}
     timeout-minutes: 5
     permissions: {}
     outputs:
       targets: ${{ steps.plan.outputs.targets }}
       merges: ${{ steps.plan.outputs.merges }}
+      end-to-end-parts: ${{ steps.plan.outputs.end-to-end-parts }}
     steps:
       - name: Split the targets into parts
         id: plan
@@ -145,6 +150,8 @@ jobs:
           SHARD_OUTPUTS: ${{ inputs.shard-outputs }}
           SEPARATE_TEST: ${{ inputs.separate-test }}
           SEPARATE_TEST_REPORT: ${{ inputs.separate-test-report }}
+          END_TO_END: ${{ inputs.end-to-end }}
+          END_TO_END_SHARDS: ${{ inputs.end-to-end-shards }}
         run: |
           set -euo pipefail
           if [ -n "$SEPARATE_TEST" ] && [[ ! "$SEPARATE_TEST" =~ ^[a-z][a-z0-9-]*$ ]]; then
@@ -157,6 +164,14 @@ jobs:
           fi
           if [ -n "$SEPARATE_TEST_REPORT" ] && [ -z "$SEPARATE_TEST" ]; then
             echo "::error::separate-test-report names what the separate test's job keeps when its test fails, so it needs separate-test."
+            exit 1
+          fi
+          if [ -n "$END_TO_END_SHARDS" ] && [ -z "$END_TO_END" ]; then
+            echo "::error::end-to-end-shards splits the end-to-end test into parts, so it needs end-to-end."
+            exit 1
+          fi
+          if [ -n "$END_TO_END_SHARDS" ] && [[ ! "$END_TO_END_SHARDS" =~ ^[2-8]$ ]]; then
+            echo "::error::end-to-end-shards is the end-to-end test's parts, 2 to 8, not \"$END_TO_END_SHARDS\"."
             exit 1
           fi
           declare -A parts=()
@@ -202,6 +217,15 @@ jobs:
             merges="[$(IFS=,; echo "${merges[*]}")]"
             echo "merges=$merges" >> "$GITHUB_OUTPUT"
             echo "$merges"
+          fi
+          if [ -n "$END_TO_END_SHARDS" ]; then
+            entries=()
+            for ((part = 1; part <= END_TO_END_SHARDS; part++)); do
+              entries+=("{\"name\":\"End-to-end test ($part of $END_TO_END_SHARDS)\",\"part\":$part,\"parts\":$END_TO_END_SHARDS}")
+            done
+            parts="[$(IFS=,; echo "${entries[*]}")]"
+            echo "end-to-end-parts=$parts" >> "$GITHUB_OUTPUT"
+            echo "$parts"
           fi
 
   build-and-test:
@@ -455,14 +479,18 @@ jobs:
         run: pipelines unchanged
 
   end-to-end:
-    name: End-to-end test
-    needs: versions
-    if: ${{ !cancelled() && inputs.end-to-end != '' && needs.versions.result == 'success' }}
+    name: ${{ matrix.name }}
+    needs: [versions, plan]
+    if: ${{ !cancelled() && inputs.end-to-end != '' && needs.versions.result == 'success' && (inputs.end-to-end-shards == '' || needs.plan.result == 'success') }}
     runs-on: ${{ fromJSON(needs.versions.outputs.runs-on-linux-x64) }}
     timeout-minutes: ${{ inputs.timeout-minutes }}
     permissions:
       contents: read
       packages: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(inputs.end-to-end-shards != '' && needs.plan.outputs.end-to-end-parts || '[{"name":"End-to-end test","part":1,"parts":1}]') }}
     steps:
       - name: Note when the job started
         run: echo "JOB_STARTED=$(date +%s)" >> "$GITHUB_ENV"
@@ -543,6 +571,7 @@ jobs:
         id: end-to-end
         env:
           END_TO_END: ${{ inputs.end-to-end }}
+          SHARD: ${{ matrix.parts > 1 && format('-- --shard={0}/{1}', matrix.part, matrix.parts) || '' }}
           JOB_MINUTES: ${{ inputs.timeout-minutes }}
         run: |
           for program in Xvfb xauth dbus-run-session gdbus gnome-keyring-daemon; do
@@ -580,7 +609,7 @@ jobs:
           xauth -q add ":$display" . "$cookie"
           echo "Xvfb serves display :$display; the test may run for $limit seconds."
           status=0
-          DISPLAY=":$display" timeout --kill-after=30 "$limit" dbus-run-session -- sh -c 'echo | XDG_DATA_HOME="$RUNNER_TEMP/keyring-data" gnome-keyring-daemon --unlock --components=secrets --control-directory="$RUNNER_TEMP/keyring-control" >/dev/null && { gdbus wait --session --timeout 30 org.freedesktop.secrets || { echo "::error::The unlocked keyring did not take org.freedesktop.secrets on the session bus within 30 seconds."; exit 1; }; } && npm run "test:$END_TO_END"' || status=$?
+          DISPLAY=":$display" timeout --kill-after=30 "$limit" dbus-run-session -- sh -c 'echo | XDG_DATA_HOME="$RUNNER_TEMP/keyring-data" gnome-keyring-daemon --unlock --components=secrets --control-directory="$RUNNER_TEMP/keyring-control" >/dev/null && { gdbus wait --session --timeout 30 org.freedesktop.secrets || { echo "::error::The unlocked keyring did not take org.freedesktop.secrets on the session bus within 30 seconds."; exit 1; }; } && npm run "test:$END_TO_END" $SHARD' || status=$?
           if [ "$status" = 124 ] || [ "$status" = 137 ]; then
             echo "::error::The end-to-end test ran past its $limit seconds and was stopped, three minutes before the job's timeout."
           fi
@@ -590,7 +619,7 @@ jobs:
         if: always() && inputs.end-to-end-report != '' && (steps.end-to-end.outcome == 'failure' || steps.end-to-end.outcome == 'cancelled')
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: end-to-end-report-${{ github.run_attempt }}
+          name: ${{ matrix.parts > 1 && format('end-to-end-report-{0}-{1}', matrix.part, github.run_attempt) || format('end-to-end-report-{0}', github.run_attempt) }}
           path: ${{ inputs.end-to-end-report }}
           if-no-files-found: ignore
           retention-days: ${{ needs.versions.outputs.retention-days }}
@@ -649,7 +678,7 @@ jobs:
           SEPARATE_RESULT: ${{ needs.separate-test.result }}
           MERGE_RESULT: ${{ needs.merge-parts.result }}
           END_TO_END_RESULT: ${{ needs.end-to-end.result }}
-          PLANNED: ${{ inputs.shards != '' || inputs.separate-test != '' || inputs.shard-outputs != '' || inputs.separate-test-report != '' }}
+          PLANNED: ${{ inputs.shards != '' || inputs.separate-test != '' || inputs.shard-outputs != '' || inputs.separate-test-report != '' || inputs.end-to-end-shards != '' }}
           SEPARATE: ${{ inputs.separate-test != '' }}
           MERGED: ${{ inputs.shard-outputs != '' }}
           END_TO_END: ${{ inputs.end-to-end != '' }}
