@@ -223,9 +223,9 @@ jobs:
             for ((part = 1; part <= END_TO_END_SHARDS; part++)); do
               entries+=("{\"name\":\"End-to-end test ($part of $END_TO_END_SHARDS)\",\"part\":$part,\"parts\":$END_TO_END_SHARDS}")
             done
-            parts="[$(IFS=,; echo "${entries[*]}")]"
-            echo "end-to-end-parts=$parts" >> "$GITHUB_OUTPUT"
-            echo "$parts"
+            end_to_end_parts="[$(IFS=,; echo "${entries[*]}")]"
+            echo "end-to-end-parts=$end_to_end_parts" >> "$GITHUB_OUTPUT"
+            echo "$end_to_end_parts"
           fi
 
   build-and-test:
@@ -479,7 +479,7 @@ jobs:
         run: pipelines unchanged
 
   end-to-end:
-    name: ${{ matrix.name }}
+    name: ${{ inputs.end-to-end-shards != '' && matrix.name || 'End-to-end test' }}
     needs: [versions, plan]
     if: ${{ !cancelled() && inputs.end-to-end != '' && needs.versions.result == 'success' && (inputs.end-to-end-shards == '' || needs.plan.result == 'success') }}
     runs-on: ${{ fromJSON(needs.versions.outputs.runs-on-linux-x64) }}
