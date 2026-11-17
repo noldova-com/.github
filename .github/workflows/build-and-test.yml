@@ -221,7 +221,7 @@ jobs:
           if [ -n "$END_TO_END_SHARDS" ]; then
             entries=()
             for ((part = 1; part <= END_TO_END_SHARDS; part++)); do
-              entries+=("{\"name\":\"End-to-end test ($part of $END_TO_END_SHARDS)\",\"part\":$part,\"parts\":$END_TO_END_SHARDS}")
+              entries+=("{\"part\":\"$part of $END_TO_END_SHARDS\"}")
             done
             end_to_end_parts="[$(IFS=,; echo "${entries[*]}")]"
             echo "end-to-end-parts=$end_to_end_parts" >> "$GITHUB_OUTPUT"
@@ -479,7 +479,8 @@ jobs:
         run: pipelines unchanged
 
   end-to-end:
-    name: ${{ inputs.end-to-end-shards != '' && matrix.name || 'End-to-end test' }}
+    # A plain name, so a skipped job still shows it; a split test's jobs show their part after it, such as "End-to-end test (1 of 2)".
+    name: End-to-end test
     needs: [versions, plan]
     if: ${{ !cancelled() && inputs.end-to-end != '' && needs.versions.result == 'success' && (inputs.end-to-end-shards == '' || needs.plan.result == 'success') }}
     runs-on: ${{ fromJSON(needs.versions.outputs.runs-on-linux-x64) }}
@@ -490,7 +491,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJSON(inputs.end-to-end-shards != '' && needs.plan.outputs.end-to-end-parts || '[{"name":"End-to-end test","part":1,"parts":1}]') }}
+        include: ${{ fromJSON(inputs.end-to-end-shards != '' && needs.plan.outputs.end-to-end-parts || '[{}]') }}
     steps:
       - name: Note when the job started
         run: echo "JOB_STARTED=$(date +%s)" >> "$GITHUB_ENV"
@@ -571,9 +572,18 @@ jobs:
         id: end-to-end
         env:
           END_TO_END: ${{ inputs.end-to-end }}
-          SHARD: ${{ matrix.parts > 1 && format('-- --shard={0}/{1}', matrix.part, matrix.parts) || '' }}
+          PART: ${{ matrix.part }}
           JOB_MINUTES: ${{ inputs.timeout-minutes }}
         run: |
+          # A split test's part, such as "1 of 2", becomes --shard=1/2, and its report's name carries the part.
+          SHARD=
+          report="end-to-end-report-$GITHUB_RUN_ATTEMPT"
+          if [ -n "$PART" ]; then
+            SHARD="-- --shard=${PART%% of *}/${PART##* of }"
+            report="end-to-end-report-${PART%% of *}-$GITHUB_RUN_ATTEMPT"
+          fi
+          export SHARD
+          echo "report=$report" >> "$GITHUB_OUTPUT"
           for program in Xvfb xauth dbus-run-session gdbus gnome-keyring-daemon; do
             if ! command -v "$program" >/dev/null; then
               echo "::error::This runner has no $program, which the end-to-end test runs under."
@@ -619,7 +629,7 @@ jobs:
         if: always() && inputs.end-to-end-report != '' && (steps.end-to-end.outcome == 'failure' || steps.end-to-end.outcome == 'cancelled')
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: ${{ matrix.parts > 1 && format('end-to-end-report-{0}-{1}', matrix.part, github.run_attempt) || format('end-to-end-report-{0}', github.run_attempt) }}
+          name: ${{ steps.end-to-end.outputs.report || format('end-to-end-report-{0}', github.run_attempt) }}
           path: ${{ inputs.end-to-end-report }}
           if-no-files-found: ignore
           retention-days: ${{ needs.versions.outputs.retention-days }}
