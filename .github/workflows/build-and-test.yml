@@ -33,6 +33,10 @@ on:
         description: Runs the repository's npm run test:<name> in a Linux x64 job of its own, such as docs, and gives each target's tests NOLDOVA_SEPARATE_TEST=<name>, so that its npm run test leaves that part out
         type: string
         default: ''
+      separate-test-report:
+        description: What the separate test's job keeps when the test fails, as the actions/upload-artifact path takes it, relative to the checkout, such as _build/docs, or several folders and files on lines of their own; hidden files included
+        type: string
+        default: ''
       unprivileged-user-namespaces:
         description: Whether Linux jobs allow unprivileged user namespaces before the tests, as Chromium's sandbox needs, lifting the AppArmor restriction on GitHub's runners, and fail when the runner still refuses them
         type: boolean
@@ -430,6 +434,16 @@ jobs:
         env:
           SEPARATE_TEST: ${{ inputs.separate-test }}
         run: npm run "test:$SEPARATE_TEST"
+
+      - name: Keep the separate test's report
+        if: failure() && inputs.separate-test-report != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: separate-test-report-${{ github.run_attempt }}
+          path: ${{ inputs.separate-test-report }}
+          include-hidden-files: true
+          if-no-files-found: ignore
+          retention-days: ${{ needs.versions.outputs.retention-days }}
 
       - name: Check that tracked files are unchanged
         run: pipelines unchanged
