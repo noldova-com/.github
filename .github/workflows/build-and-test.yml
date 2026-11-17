@@ -34,7 +34,7 @@ on:
         type: string
         default: ''
       separate-test-report:
-        description: What the separate test's job keeps when the test fails, as the actions/upload-artifact path takes it, relative to the checkout, such as _build/docs, or several folders and files on lines of their own; hidden files included
+        description: What the separate test's job keeps when the test fails or is cancelled, such as by the job's time limit, as the actions/upload-artifact path takes it, relative to the checkout, such as _build/docs, or several folders and files on lines of their own, hidden files included, so it names nothing that holds a secret; it needs separate-test
         type: string
         default: ''
       unprivileged-user-namespaces:
@@ -50,7 +50,7 @@ on:
         type: string
         default: ''
       end-to-end-report:
-        description: A folder, relative to the checkout, that the end-to-end job keeps when the test fails, such as _build/e2e
+        description: A folder, relative to the checkout, that the end-to-end job keeps when the test fails or is cancelled, such as _build/e2e
         type: string
         default: ''
       timeout-minutes:
@@ -129,7 +129,7 @@ jobs:
   plan:
     name: Plan the parts
     needs: versions
-    if: inputs.shards != '' || inputs.separate-test != '' || inputs.shard-outputs != ''
+    if: inputs.shards != '' || inputs.separate-test != '' || inputs.shard-outputs != '' || inputs.separate-test-report != ''
     runs-on: ${{ fromJSON(needs.versions.outputs.runs-on-linux-x64) }}
     timeout-minutes: 5
     permissions: {}
@@ -144,6 +144,7 @@ jobs:
           SHARDS: ${{ inputs.shards }}
           SHARD_OUTPUTS: ${{ inputs.shard-outputs }}
           SEPARATE_TEST: ${{ inputs.separate-test }}
+          SEPARATE_TEST_REPORT: ${{ inputs.separate-test-report }}
         run: |
           set -euo pipefail
           if [ -n "$SEPARATE_TEST" ] && [[ ! "$SEPARATE_TEST" =~ ^[a-z][a-z0-9-]*$ ]]; then
@@ -152,6 +153,10 @@ jobs:
           fi
           if [ -n "$SHARD_OUTPUTS" ] && [ -z "$SHARDS" ]; then
             echo "::error::shard-outputs names the folder each part of a split target keeps, so it needs shards."
+            exit 1
+          fi
+          if [ -n "$SEPARATE_TEST_REPORT" ] && [ -z "$SEPARATE_TEST" ]; then
+            echo "::error::separate-test-report names what the separate test's job keeps when its test fails, so it needs separate-test."
             exit 1
           fi
           declare -A parts=()
@@ -431,12 +436,13 @@ jobs:
           echo "Unprivileged user namespaces are allowed, so Chromium's sandbox starts without its setuid helper."
 
       - name: Run the separate test
+        id: separate
         env:
           SEPARATE_TEST: ${{ inputs.separate-test }}
         run: npm run "test:$SEPARATE_TEST"
 
       - name: Keep the separate test's report
-        if: failure() && inputs.separate-test-report != ''
+        if: always() && inputs.separate-test-report != '' && (steps.separate.outcome == 'failure' || steps.separate.outcome == 'cancelled')
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: separate-test-report-${{ github.run_attempt }}
@@ -534,6 +540,7 @@ jobs:
           echo "Unprivileged user namespaces are allowed, so Chromium's sandbox starts without its setuid helper."
 
       - name: Run the end-to-end test
+        id: end-to-end
         env:
           END_TO_END: ${{ inputs.end-to-end }}
           JOB_MINUTES: ${{ inputs.timeout-minutes }}
@@ -580,7 +587,7 @@ jobs:
           exit "$status"
 
       - name: Keep the end-to-end test's report
-        if: failure() && inputs.end-to-end-report != ''
+        if: always() && inputs.end-to-end-report != '' && (steps.end-to-end.outcome == 'failure' || steps.end-to-end.outcome == 'cancelled')
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: end-to-end-report-${{ github.run_attempt }}
@@ -642,7 +649,7 @@ jobs:
           SEPARATE_RESULT: ${{ needs.separate-test.result }}
           MERGE_RESULT: ${{ needs.merge-parts.result }}
           END_TO_END_RESULT: ${{ needs.end-to-end.result }}
-          PLANNED: ${{ inputs.shards != '' || inputs.separate-test != '' || inputs.shard-outputs != '' }}
+          PLANNED: ${{ inputs.shards != '' || inputs.separate-test != '' || inputs.shard-outputs != '' || inputs.separate-test-report != '' }}
           SEPARATE: ${{ inputs.separate-test != '' }}
           MERGED: ${{ inputs.shard-outputs != '' }}
           END_TO_END: ${{ inputs.end-to-end != '' }}
