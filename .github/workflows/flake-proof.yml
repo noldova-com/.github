@@ -320,12 +320,14 @@ jobs:
               cookie=$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')
               xauth -q add :0 . "$cookie"
               mkfifo "$KEYRING/display"
-              Xvfb -displayfd 3 -auth "$XAUTHORITY" -screen 0 1920x1080x24 -nolisten tcp 3> "$KEYRING/display" &
+              # Xvfb's own output, such as xkbcomp's warnings at each app's start, goes to a file beside the run's log, which the artifact keeps.
+              Xvfb -displayfd 3 -auth "$XAUTHORITY" -screen 0 1920x1080x24 -nolisten tcp 3> "$KEYRING/display" 2> "_build/flake-proof/run-$run-xvfb.log" &
               xvfb=$!
               display=
               read -r -t 30 display < "$KEYRING/display" || true
               if [ -z "$display" ]; then
-                echo "::error::Xvfb didn't start for run $run, so the run has no display."
+                echo "::error::Xvfb didn't start for run $run, so the run has no display. Its output:"
+                cat "_build/flake-proof/run-$run-xvfb.log"
                 exit 1
               fi
               xauth -q add ":$display" . "$cookie"
