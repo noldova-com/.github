@@ -584,6 +584,7 @@ jobs:
           fi
           export SHARD
           echo "report=$report" >> "$GITHUB_OUTPUT"
+          echo "display-log=${report/end-to-end-report/virtual-display-log}" >> "$GITHUB_OUTPUT"
           for program in Xvfb xauth dbus-run-session gdbus gnome-keyring-daemon; do
             if ! command -v "$program" >/dev/null; then
               echo "::error::This runner has no $program, which the end-to-end test runs under."
@@ -607,13 +608,15 @@ jobs:
           cookie=$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')
           xauth -q add :0 . "$cookie"
           mkfifo "$RUNNER_TEMP/xvfb-display"
-          Xvfb -displayfd 3 -auth "$XAUTHORITY" -screen 0 1920x1080x24 -nolisten tcp 3> "$RUNNER_TEMP/xvfb-display" &
+          # Xvfb's own output, such as xkbcomp's warnings at each app's start, goes to a file kept with a failed test's artifacts, not the log.
+          Xvfb -displayfd 3 -auth "$XAUTHORITY" -screen 0 1920x1080x24 -nolisten tcp 3> "$RUNNER_TEMP/xvfb-display" 2> "$RUNNER_TEMP/xvfb.log" &
           xvfb=$!
           trap 'kill "$xvfb" 2>/dev/null || true' EXIT
           display=
           read -r -t 30 display < "$RUNNER_TEMP/xvfb-display" || true
           if [ -z "$display" ]; then
-            echo "::error::Xvfb didn't start, so the end-to-end test has no display."
+            echo "::error::Xvfb didn't start, so the end-to-end test has no display. Its output:"
+            cat "$RUNNER_TEMP/xvfb.log"
             exit 1
           fi
           xauth -q add ":$display" . "$cookie"
@@ -631,6 +634,15 @@ jobs:
         with:
           name: ${{ steps.end-to-end.outputs.report || format('end-to-end-report-{0}', github.run_attempt) }}
           path: ${{ inputs.end-to-end-report }}
+          if-no-files-found: ignore
+          retention-days: ${{ needs.versions.outputs.retention-days }}
+
+      - name: Keep the virtual display's log
+        if: always() && (steps.end-to-end.outcome == 'failure' || steps.end-to-end.outcome == 'cancelled')
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ steps.end-to-end.outputs.display-log || format('virtual-display-log-{0}', github.run_attempt) }}
+          path: ${{ runner.temp }}/xvfb.log
           if-no-files-found: ignore
           retention-days: ${{ needs.versions.outputs.retention-days }}
 
