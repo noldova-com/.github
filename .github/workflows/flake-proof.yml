@@ -279,14 +279,15 @@ jobs:
         timeout-minutes: 2
         shell: pwsh
         run: |
+          Add-Type -AssemblyName System.Windows.Forms
           try {
             Set-DisplayResolution -Width 1920 -Height 1080 -Force
           }
           catch {
-            Write-Output "::error::The runner's screen couldn't be set to 1920×1080: $($_.Exception.Message)"
+            $screen = [System.Windows.Forms.Screen]::PrimaryScreen
+            Write-Output "::error::The runner's screen is $($screen.Bounds.Width)×$($screen.Bounds.Height) and couldn't be set to 1920×1080: $($_.Exception.Message)"
             exit 1
           }
-          Add-Type -AssemblyName System.Windows.Forms
           $screen = [System.Windows.Forms.Screen]::PrimaryScreen
           if ($screen.Bounds.Width -ne 1920 -or $screen.Bounds.Height -ne 1080) {
             Write-Output "::error::The runner's screen is $($screen.Bounds.Width)×$($screen.Bounds.Height) after it was set to 1920×1080, so a test that opens windows can't size them."
@@ -302,7 +303,15 @@ jobs:
           read_size() {
             osascript -l JavaScript -e 'ObjC.import("AppKit"); const screen = $.NSScreen.mainScreen; screen.isNil() ? "0 0" : `${Math.round(screen.frame.size.width)} ${Math.round(screen.frame.size.height)}`'
           }
-          read -r width height <<< "$(read_size)"
+          read_checked_size() {
+            size=$(read_size)
+            read -r width height <<< "$size"
+            if ! [[ "$width" =~ ^[0-9]+$ && "$height" =~ ^[0-9]+$ ]]; then
+              echo "::error::The runner's screen size couldn't be read: NSScreen gave \"$size\"."
+              exit 1
+            fi
+          }
+          read_checked_size
           echo "The main screen is ${width}×${height} points."
           if [ "$width" -lt 1920 ] || [ "$height" -lt 1080 ]; then
             cat > "$RUNNER_TEMP/screen-mode.swift" <<'SWIFT'
@@ -326,7 +335,7 @@ jobs:
           }
           SWIFT
             swift "$RUNNER_TEMP/screen-mode.swift"
-            read -r width height <<< "$(read_size)"
+            read_checked_size
             echo "The main screen is now ${width}×${height} points."
           fi
           if [ "$width" -lt 1920 ] || [ "$height" -lt 1080 ]; then
