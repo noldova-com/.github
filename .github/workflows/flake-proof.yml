@@ -271,8 +271,15 @@ jobs:
 
       - name: Install the virtual display, the session bus and the keyring on GitHub's runner
         if: inputs.display && runner.os == 'Linux' && runner.environment == 'github-hosted'
-        timeout-minutes: 5
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends xvfb xauth dbus-daemon dbus-bin gnome-keyring libglib2.0-bin
+        timeout-minutes: 10
+        run: |
+          apt=(sudo DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=600 -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30)
+          packages=(xvfb xauth dbus-daemon dbus-bin gnome-keyring libglib2.0-bin)
+          if ! "${apt[@]}" install -y --no-install-recommends "${packages[@]}"; then
+            echo "Installing from the image's package lists failed, so they are updated first."
+            "${apt[@]}" update
+            "${apt[@]}" install -y --no-install-recommends "${packages[@]}"
+          fi
 
       - name: Set the screen of GitHub's Windows runner to 1920×1080
         if: inputs.display && runner.os == 'Windows' && runner.environment == 'github-hosted'
