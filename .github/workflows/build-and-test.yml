@@ -259,9 +259,11 @@ jobs:
             echo Y | format.com R: /DevDrv /Q /V:DevDrive /Y
             fsutil devdrv query R:
             root='R:'
-            mkdir "$root\workspace"
-            [ ! -d "$GITHUB_WORKSPACE" ] || rmdir "$GITHUB_WORKSPACE"
-            cmd /c mklink /J "$GITHUB_WORKSPACE" "$root\workspace"
+            vhd="$RUNNER_TEMP\workspace.vhdx"
+            printf '%s\r\n' "create vdisk file=\"$vhd\" maximum=40960 type=expandable" "select vdisk file=\"$vhd\"" 'attach vdisk' 'convert gpt' 'create partition primary' "assign mount=\"$GITHUB_WORKSPACE\"" > "$script"
+            diskpart /s "$script"
+            echo Y | format.com "$GITHUB_WORKSPACE\\" /DevDrv /Q /V:Workspace /Y
+            fsutil devdrv query "$GITHUB_WORKSPACE"
           fi
           tmp="$root\tmp"
           cache="$root\npm-cache"
