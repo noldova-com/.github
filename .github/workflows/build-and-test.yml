@@ -244,6 +244,7 @@ jobs:
     steps:
       - name: Move the workspace and npm's temporary files and cache off the system disk
         if: runner.os == 'Windows' && runner.environment == 'github-hosted'
+        working-directory: ${{ runner.temp }}
         env:
           MSYS_NO_PATHCONV: '1'
         run: |
