@@ -287,12 +287,55 @@ jobs:
         shell: pwsh
         run: |
           Add-Type -AssemblyName System.Windows.Forms
-          try {
-            Set-DisplayResolution -Width 1920 -Height 1080 -Force
+          Add-Type -TypeDefinition @'
+          using System.Collections.Generic;
+          using System.Runtime.InteropServices;
+          public static class ScreenMode
+          {
+              [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+              struct DisplayMode
+              {
+                  [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string DeviceName;
+                  public short SpecVersion, DriverVersion, Size, DriverExtra;
+                  public int Fields, PositionX, PositionY, DisplayOrientation, DisplayFixedOutput;
+                  public short Color, Duplex, YResolution, TTOption, Collate;
+                  [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string FormName;
+                  public short LogPixels;
+                  public int BitsPerPel, PelsWidth, PelsHeight, DisplayFlags, DisplayFrequency;
+                  public int IcmMethod, IcmIntent, MediaType, DitherType, Reserved1, Reserved2, PanningWidth, PanningHeight;
+              }
+              [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+              static extern bool EnumDisplaySettings(string device, int index, ref DisplayMode mode);
+              [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+              static extern int ChangeDisplaySettings(ref DisplayMode mode, int flags);
+              static DisplayMode Empty()
+              {
+                  var mode = new DisplayMode();
+                  mode.Size = (short)Marshal.SizeOf(typeof(DisplayMode));
+                  return mode;
+              }
+              public static int Set(int width, int height)
+              {
+                  var mode = Empty();
+                  if (!EnumDisplaySettings(null, -1, ref mode)) return -100;
+                  mode.PelsWidth = width;
+                  mode.PelsHeight = height;
+                  mode.Fields = 0x80000 | 0x100000;
+                  return ChangeDisplaySettings(ref mode, 0);
+              }
+              public static string Modes()
+              {
+                  var sizes = new SortedSet<string>();
+                  var mode = Empty();
+                  for (var index = 0; EnumDisplaySettings(null, index, ref mode); index++) sizes.Add(mode.PelsWidth + "×" + mode.PelsHeight);
+                  return string.Join(", ", sizes);
+              }
           }
-          catch {
+          '@
+          $result = [ScreenMode]::Set(1920, 1080)
+          if ($result -ne 0) {
             $screen = [System.Windows.Forms.Screen]::PrimaryScreen
-            Write-Output "::error::The runner's screen is $($screen.Bounds.Width)×$($screen.Bounds.Height) and couldn't be set to 1920×1080: $($_.Exception.Message)"
+            Write-Output "::error::The runner's screen is $($screen.Bounds.Width)×$($screen.Bounds.Height) and couldn't be set to 1920×1080: ChangeDisplaySettings returned $result. Its display's modes are $([ScreenMode]::Modes())."
             exit 1
           }
           $screen = [System.Windows.Forms.Screen]::PrimaryScreen
