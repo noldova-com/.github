@@ -18,10 +18,11 @@ How the team works, such as who decides, how issues and pull requests move, and 
 
 [CONTEXT](https://github.com/noldova-com/context) is Noldova's base framework, and everything we build is based on it.
 
-- New functionality is built on CONTEXT's packages.
-- What a project needs and CONTEXT lacks is added to CONTEXT as a package, never taken from an outside package or written into one project alone.
-- CONTEXT is our reference code: how it is written and tested, how fast it runs and how fast its tests run set the bar every project is held to.
-- Code on another base today, such as an Electron or Angular project, keeps it until a planned move, which needs a maintainer's decision.
+- A general capability a project needs, one that isn't the product's own behavior, comes from CONTEXT; when CONTEXT lacks it, it is added to CONTEXT as a package, as [CODE.md](CODE.md#ownership) places it.
+- An outside package comes in only as [SECURITY.md](SECURITY.md#dependencies) says.
+- A project built on another framework, such as Electron or Angular, keeps it unless a maintainer decides to move it, and uses CONTEXT for what CONTEXT provides.
+- CONTEXT is our reference code: it meets these standards, and how it is written and tested, how fast it runs and how fast its tests run are the example every project follows.
+  These documents hold the rules; [TESTING.md](TESTING.md#the-bar) sets the speed every suite meets.
 
 ## Precedence
 

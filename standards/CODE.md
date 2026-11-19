@@ -16,8 +16,9 @@ Apply DRY to duplicated knowledge and behavior, not merely similar code; it does
 Place behavior with its owner:
 
 1. The host (language, framework or platform) provides it: use that form.
-2. One package needs it: use a method of its owning concept.
-3. Several packages need it: place it in the lowest package that owns the concept, preserving dependency direction.
+2. It is a general capability, not the product's own behavior: use CONTEXT's, or add it to CONTEXT as a package ([the base framework](AGENTS.md#the-base-framework)).
+3. One package needs it: use a method of its owning concept.
+4. Several packages need it: place it in the lowest package that owns the concept, preserving dependency direction.
 
 When work shows that behavior belongs to another owner, move it there before going on; a local copy "for now" is how buckets and duplicate types begin.
 
