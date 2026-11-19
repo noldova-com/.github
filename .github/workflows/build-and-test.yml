@@ -242,20 +242,7 @@ jobs:
       matrix:
         include: ${{ fromJSON(needs.plan.outputs.targets || needs.versions.outputs.targets) }}
     steps:
-      - name: Check out the revision
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Set up Node.js
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: ${{ needs.versions.outputs.node-version }}
-          package-manager-cache: false
-          registry-url: ${{ needs.versions.outputs.install-registry-url }}
-          scope: ${{ needs.versions.outputs.install-scope }}
-
-      - name: Move npm's temporary files and cache off the system disk
+      - name: Move the workspace and npm's temporary files and cache off the system disk
         if: runner.os == 'Windows' && runner.environment == 'github-hosted'
         env:
           MSYS_NO_PATHCONV: '1'
@@ -271,11 +258,27 @@ jobs:
             echo Y | format.com R: /DevDrv /Q /V:DevDrive /Y
             fsutil devdrv query R:
             root='R:'
+            mkdir "$root\workspace"
+            [ ! -d "$GITHUB_WORKSPACE" ] || rmdir "$GITHUB_WORKSPACE"
+            cmd /c mklink /J "$GITHUB_WORKSPACE" "$root\workspace"
           fi
           tmp="$root\tmp"
           cache="$root\npm-cache"
           mkdir -p "$tmp" "$cache"
           printf '%s\n' "TEMP=$tmp" "TMP=$tmp" "npm_config_cache=$cache" >> "$GITHUB_ENV"
+
+      - name: Check out the revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ needs.versions.outputs.node-version }}
+          package-manager-cache: false
+          registry-url: ${{ needs.versions.outputs.install-registry-url }}
+          scope: ${{ needs.versions.outputs.install-scope }}
 
       - &browser-folder
         name: Choose the folder and cache key of Playwright's browsers
