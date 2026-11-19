@@ -585,10 +585,15 @@ jobs:
 
       - name: Install the virtual display, the session bus and the Secret Service on GitHub's runner
         if: runner.environment == 'github-hosted'
-        timeout-minutes: 5
+        timeout-minutes: 10
         run: |
-          sudo DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=600 update
-          sudo DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=600 install -y --no-install-recommends xvfb xauth dbus-daemon dbus-bin gnome-keyring libglib2.0-bin
+          apt=(sudo DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=600 -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30)
+          packages=(xvfb xauth dbus-daemon dbus-bin gnome-keyring libglib2.0-bin)
+          if ! "${apt[@]}" install -y --no-install-recommends "${packages[@]}"; then
+            echo "Installing from the image's package lists failed, so they are updated first."
+            "${apt[@]}" update
+            "${apt[@]}" install -y --no-install-recommends "${packages[@]}"
+          fi
 
       - name: Allow unprivileged user namespaces, which Chromium's sandbox needs
         if: inputs.unprivileged-user-namespaces
