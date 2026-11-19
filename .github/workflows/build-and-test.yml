@@ -375,9 +375,30 @@ jobs:
           overwrite: true
           retention-days: ${{ needs.versions.outputs.retention-days }}
 
-      - name: Wait out the runner's network outage
+      # A hosted runner's name lookups can fail for a minute or more while other runners reach the artifact service, so a failed upload of a part
+      # that has outputs waits until the service's name resolves, for at most 5 minutes, and then uploads once more; one with no outputs fails at once.
+      - name: Wait until the artifact service's name resolves
         if: steps.keep-part.outcome == 'failure'
-        run: sleep 180
+        timeout-minutes: 6
+        env:
+          OUTPUTS: ${{ inputs.shard-outputs }}
+        run: |
+          if [ -z "$(find "$OUTPUTS" -mindepth 1 -print -quit 2>/dev/null)" ]; then
+            echo "::error::$OUTPUTS is missing or empty, so the part has no outputs to keep."
+            exit 1
+          fi
+          url="${ACTIONS_RESULTS_URL:-https://results-receiver.actions.githubusercontent.com/}"
+          host="${url#*://}"
+          host="${host%%[/:]*}"
+          deadline=$((SECONDS + 300))
+          until node -e 'require("node:dns").lookup(process.argv[1], error => process.exit(error ? 1 : 0))' "$host"; do
+            if [ "$SECONDS" -ge "$deadline" ]; then
+              echo "::error::$host still doesn't resolve after 5 minutes, so the part's outputs aren't kept."
+              exit 1
+            fi
+            sleep 5
+          done
+          echo "$host resolves; uploading the part's outputs once more."
 
       - name: Keep the part's outputs, once more
         if: steps.keep-part.outcome == 'failure'
