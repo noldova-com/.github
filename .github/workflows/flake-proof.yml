@@ -299,10 +299,9 @@ jobs:
         timeout-minutes: 2
         run: |
           set -euo pipefail
-          displays=$(system_profiler SPDisplaysDataType)
-          echo "$displays"
-          resolution=$(echo "$displays" | awk '/Resolution:/ { print $2, $4; exit }')
-          read -r width height <<< "${resolution:-0 0}"
+          size=$(osascript -l JavaScript -e 'ObjC.import("AppKit"); const screen = $.NSScreen.mainScreen; screen.isNil() ? "0 0" : `${Math.round(screen.frame.size.width)} ${Math.round(screen.frame.size.height)}`')
+          echo "The main screen is ${size/ /×} points."
+          read -r width height <<< "$size"
           if [ "$width" -lt 1920 ] || [ "$height" -lt 1080 ]; then
             echo "::error::The runner's screen is ${width}×${height}, smaller than 1920×1080, so a test that opens windows can't size them."
             exit 1
