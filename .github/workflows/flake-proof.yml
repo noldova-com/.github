@@ -35,7 +35,7 @@ on:
         type: string
         default: ''
       display:
-        description: Runs each run on Linux under a virtual display and a session bus, for a test that opens windows
+        description: Runs each run on Linux under a virtual display and a session bus, and gives GitHub's Windows and macOS runners a 1920×1080 screen, for a test that opens windows
         type: boolean
         default: false
       reports:
@@ -273,6 +273,40 @@ jobs:
         if: inputs.display && runner.os == 'Linux' && runner.environment == 'github-hosted'
         timeout-minutes: 5
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends xvfb xauth dbus-daemon dbus-bin gnome-keyring libglib2.0-bin
+
+      - name: Set the screen of GitHub's Windows runner to 1920×1080
+        if: inputs.display && runner.os == 'Windows' && runner.environment == 'github-hosted'
+        timeout-minutes: 2
+        shell: pwsh
+        run: |
+          try {
+            Set-DisplayResolution -Width 1920 -Height 1080 -Force
+          }
+          catch {
+            Write-Output "::error::The runner's screen couldn't be set to 1920×1080: $($_.Exception.Message)"
+            exit 1
+          }
+          Add-Type -AssemblyName System.Windows.Forms
+          $screen = [System.Windows.Forms.Screen]::PrimaryScreen
+          if ($screen.Bounds.Width -ne 1920 -or $screen.Bounds.Height -ne 1080) {
+            Write-Output "::error::The runner's screen is $($screen.Bounds.Width)×$($screen.Bounds.Height) after it was set to 1920×1080, so a test that opens windows can't size them."
+            exit 1
+          }
+          Write-Output "The screen is $($screen.Bounds.Width)×$($screen.Bounds.Height), its work area $($screen.WorkingArea.Width)×$($screen.WorkingArea.Height)."
+
+      - name: Check the screen of GitHub's macOS runner
+        if: inputs.display && runner.os == 'macOS' && runner.environment == 'github-hosted'
+        timeout-minutes: 2
+        run: |
+          set -euo pipefail
+          displays=$(system_profiler SPDisplaysDataType)
+          echo "$displays"
+          resolution=$(echo "$displays" | awk '/Resolution:/ { print $2, $4; exit }')
+          read -r width height <<< "${resolution:-0 0}"
+          if [ "$width" -lt 1920 ] || [ "$height" -lt 1080 ]; then
+            echo "::error::The runner's screen is ${width}×${height}, smaller than 1920×1080, so a test that opens windows can't size them."
+            exit 1
+          fi
 
       - name: Run the tests
         env:
