@@ -260,10 +260,12 @@ jobs:
             fsutil devdrv query R:
             root='R:'
             vhd="$RUNNER_TEMP\workspace.vhdx"
-            printf '%s\r\n' "create vdisk file=\"$vhd\" maximum=40960 type=expandable" "select vdisk file=\"$vhd\"" 'attach vdisk' 'convert gpt' 'create partition primary' "assign mount=\"$GITHUB_WORKSPACE\"" > "$script"
+            printf '%s\r\n' "create vdisk file=\"$vhd\" maximum=40960 type=expandable" "select vdisk file=\"$vhd\"" 'attach vdisk' 'convert gpt' 'create partition primary' 'assign letter=W' > "$script"
             diskpart /s "$script"
-            echo Y | format.com "$GITHUB_WORKSPACE\\" /DevDrv /Q /V:Workspace /Y
-            fsutil devdrv query "$GITHUB_WORKSPACE"
+            echo Y | format.com W: /DevDrv /Q /V:Workspace /Y
+            fsutil devdrv query W:
+            printf '%s\r\n' 'select volume=W' 'remove letter=W' "assign mount=\"$GITHUB_WORKSPACE\"" > "$script"
+            diskpart /s "$script"
           fi
           tmp="$root\tmp"
           cache="$root\npm-cache"
