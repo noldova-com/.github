@@ -587,8 +587,6 @@ jobs:
         if: runner.environment == 'github-hosted'
         timeout-minutes: 10
         run: |
-          # The image's package lists usually still name these packages, so the lists are updated, where a slow mirror can
-          # stall, only when installing from them fails; each request then gives up after 30 seconds and is tried 3 more times.
           apt=(sudo DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=600 -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30)
           packages=(xvfb xauth dbus-daemon dbus-bin gnome-keyring libglib2.0-bin)
           if ! "${apt[@]}" install -y --no-install-recommends "${packages[@]}"; then
