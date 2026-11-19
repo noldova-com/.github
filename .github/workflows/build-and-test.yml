@@ -363,7 +363,44 @@ jobs:
         run: npm run test -- --skip-test-details --skip-coverage-details $SHARD
 
       - name: Keep the part's outputs
+        id: keep-part
         if: inputs.shard-outputs != '' && matrix.parts > 1
+        continue-on-error: true
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: part-${{ matrix.target }}-${{ matrix.part }}
+          path: ${{ inputs.shard-outputs }}
+          if-no-files-found: error
+          include-hidden-files: true
+          overwrite: true
+          retention-days: ${{ needs.versions.outputs.retention-days }}
+
+      # A hosted runner's name lookups can fail for a minute or more while other runners reach the artifact service, so a failed upload of a part
+      # that has outputs waits until the service's name resolves, for at most 5 minutes, and then uploads once more; one with no outputs fails at once.
+      - name: Wait until the artifact service's name resolves
+        if: steps.keep-part.outcome == 'failure'
+        timeout-minutes: 6
+        env:
+          OUTPUTS: ${{ inputs.shard-outputs }}
+        run: |
+          if [ -z "$(find "$OUTPUTS" -mindepth 1 -print -quit 2>/dev/null)" ]; then
+            echo "::error::$OUTPUTS is missing or empty, so the part has no outputs to keep."
+            exit 1
+          fi
+          # The host of ACTIONS_RESULTS_URL, which the runner gives actions alone, not run steps.
+          host=results-receiver.actions.githubusercontent.com
+          deadline=$((SECONDS + 300))
+          until node -e 'require("node:dns").lookup(process.argv[1], error => process.exit(error ? 1 : 0))' "$host"; do
+            if [ "$SECONDS" -ge "$deadline" ]; then
+              echo "::error::$host still doesn't resolve after 5 minutes, so the part's outputs aren't kept."
+              exit 1
+            fi
+            sleep 5
+          done
+          echo "$host resolves; uploading the part's outputs once more."
+
+      - name: Keep the part's outputs, once more
+        if: steps.keep-part.outcome == 'failure'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: part-${{ matrix.target }}-${{ matrix.part }}
