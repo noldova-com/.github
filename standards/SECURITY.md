@@ -48,7 +48,7 @@ Private vulnerability reporting is owned by the organization's `.github` reposit
 
 ## Dependencies
 
-- **No external package unless it is absolutely necessary.** Prefer the platform, the project's framework or our own code.
+- **No external package unless it is absolutely necessary.** Use the platform, the project's framework or [CONTEXT](AGENTS.md#the-base-framework), adding to CONTEXT what [CODE.md](CODE.md#ownership) places there.
   A new external package needs a maintainer's decision, naming the present requirement and the own-code alternative weighed, and an exact pin.
 - Review dependencies and install scripts for necessity, provenance, license and known vulnerabilities.
 - Exact pins and lockfiles make installations repeatable; they do not establish safety.
