@@ -14,6 +14,15 @@ How the team works, such as who decides, how issues and pull requests move, and 
 - **Project rules** live in each repository: its `AGENTS.md`, architecture, and its own coding, testing and UI documents.
   They name the product's components, layout, tokens, tooling and CI.
 
+## The base framework
+
+[CONTEXT](https://github.com/noldova-com/context) is Noldova's base framework, and everything we build is based on it.
+
+- New functionality is built on CONTEXT's packages.
+- What a project needs and CONTEXT lacks is added to CONTEXT as a package, never taken from an outside package or written into one project alone.
+- CONTEXT is our reference code: how it is written and tested, how fast it runs and how fast its tests run set the bar every project is held to.
+- Code on another base today, such as an Electron or Angular project, keeps it until a planned move, which needs a maintainer's decision.
+
 ## Precedence
 
 1. The general documents.
