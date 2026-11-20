@@ -154,15 +154,15 @@ jobs:
               exit 1
             fi
           done
-          if ! [[ "$RUNS" =~ ^[1-9][0-9]*$ ]] || [ "$RUNS" -gt 200 ]; then
+          if ! [[ "$RUNS" =~ ^[1-9][0-9]{0,2}$ ]] || [ "$RUNS" -gt 200 ]; then
             echo "::error::runs must be a whole number from 1 to 200, with no leading zero."
             exit 1
           fi
-          if ! [[ "$JOBS" =~ ^[1-9][0-9]*$ ]] || [ "$JOBS" -gt 4 ]; then
+          if ! [[ "$JOBS" =~ ^[1-9]$ ]] || [ "$JOBS" -gt 4 ]; then
             echo "::error::jobs must be a whole number from 1 to 4, with no leading zero."
             exit 1
           fi
-          if ! [[ "$TIMEOUT" =~ ^[1-9][0-9]*$ ]] || [ "$TIMEOUT" -gt 360 ]; then
+          if ! [[ "$TIMEOUT" =~ ^[1-9][0-9]{0,2}$ ]] || [ "$TIMEOUT" -gt 360 ]; then
             echo "::error::timeout-minutes must be a whole number from 1 to 360, with no leading zero."
             exit 1
           fi
