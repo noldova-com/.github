@@ -463,7 +463,7 @@ jobs:
           name: archives
           path: _packages/*.tgz
           if-no-files-found: error
-          retention-days: ${{ needs.versions.outputs.retention-days }}
+          retention-days: 30
 
   publish:
     name: Publish to the registry

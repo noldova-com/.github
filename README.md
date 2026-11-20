@@ -490,7 +490,7 @@ jobs:
 - The Node version is `26.13.1`, and the npm version that comes with it, `11.20.0`, is checked after setup.
 - A private repository installs the `@noldova-com` scope's packages from GitHub's registry, `https://npm.pkg.github.com`, and every other package from npm's registry; a public repository installs every package from npm's registry, with no token.
 - A release from a public repository publishes `@noldova` packages to npm's registry, `https://registry.npmjs.org`, with public access; from a private repository, `@noldova-com` packages to GitHub's registry with restricted access.
-- A private repository's artifacts are kept for 1 day, a public repository's for 7.
+- A private repository's artifacts are kept for 1 day, a public repository's for 7, except a release's checked archives, which the publish job takes after its approval: they are kept 30 days, as long as GitHub lets a deployment wait for its approval, whatever `retention-days` says.
 - A public repository's jobs run on GitHub-hosted runners: `ubuntu-24.04` and `ubuntu-24.04-arm` for Linux, `windows-2025` and `windows-11-arm` for Windows, `macos-15-intel` and `macos-15` for macOS, x64 and arm64.
 - A private repository's jobs run where the organization's variables say: with `RUNNER_TYPE` set to `GITHUB`, on the same GitHub-hosted runners; otherwise on the organization's own runners, whose `runs-on` value `RUNS_ON_SELF_HOSTED_<system>` holds as JSON for x64 and `RUNS_ON_SELF_HOSTED_<system>_ARM64` for arm64, for the systems `LINUX`, `WINDOWS` and `MACOS`; a target whose variable is empty has no runner.
 
