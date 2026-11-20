@@ -29,7 +29,7 @@ A typical repository's owners:
 | The product's purpose and direction | `documents/VISION.md` |
 | Components and their boundaries, in outline | `documents/ARCHITECTURE.md` |
 | One subject, such as packages, build, storage, a protocol or a feature | its own `documents/<SUBJECT>.md` |
-| Its checks: what they run, coverage exclusions, accepted slow test files, fixed pauses, the timing parameters only tests pass, and tests that run alone | `README.md`, its Checks section |
+| Its checks: what they run, coverage exclusions, accepted slow test files, component tests over 1 second, fixed pauses, the timing parameters only tests pass, specs that fake a shared timer, and tests that run alone | `README.md`, its Checks section |
 | Code rules only this repository has, such as its file names or exports | `documents/ARCHITECTURE.md` |
 | A specification of what it ships, such as a component kit's themes and controls | its own `documents/<SUBJECT>.md` |
 | Contribution, issue and PR requirements | the organization's `.github` repository, `CONTRIBUTING.md`, unless the repository needs its own |
