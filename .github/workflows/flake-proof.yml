@@ -410,41 +410,85 @@ jobs:
           command=(npm run "$SCRIPT" -- ${filters[@]+"${filters[@]}"})
           keyring=false
           xvfb=
-          # Each run starts in a process group of its own, so stopping it stops everything it started, the test runner, browsers and servers too.
-          # Windows' programs keep no process group, so there the run is the processes its first one started, found through their parents
-          # and limited to those started since the run, which also finds a child whose parent has already exited.
+          # On Linux and macOS each run starts in a process group of its own and carries a marker in its environment, which every process it starts inherits,
+          # so stopping it stops everything it started, also a browser or daemon that left the group. On Windows the run goes in a job object of its own,
+          # which Windows closes, ending every process in it, when the launcher that holds it ends.
           set -m
           active=
           if [ "$RUNNER_OS" = Windows ]; then
-            tree="$RUNNER_TEMP/flake-proof-tree-$JOB.ps1"
-            cat > "$tree" <<'PS1'
-          param([long] $Root, [long] $Since, [switch] $Stop)
-          $from = [DateTimeOffset]::FromUnixTimeSeconds($Since).LocalDateTime
-          $all = @(Get-CimInstance Win32_Process | Where-Object { $_.CreationDate -ge $from })
-          $ids = @($Root)
-          do {
-            $more = @($all | Where-Object { $ids -contains $_.ParentProcessId -and $ids -notcontains $_.ProcessId } | ForEach-Object { $_.ProcessId })
-            $ids += $more
-          } while ($more.Count -gt 0)
-          $left = @($all | Where-Object { $ids -contains $_.ProcessId })
-          if ($Stop) { $left | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue } }
-          $left.Count
+            launcher="$RUNNER_TEMP/flake-proof-launcher-$JOB.ps1"
+            cat > "$launcher" <<'PS1'
+          param([string] $Bash, [string] $Script, [string] $Left)
+          $ErrorActionPreference = 'Stop'
+          Add-Type -TypeDefinition @'
+          using System;
+          using System.ComponentModel;
+          using System.Runtime.InteropServices;
+          public static class FlakeProofJob {
+            [StructLayout(LayoutKind.Sequential)] struct BasicLimits { public long PerProcessUserTimeLimit; public long PerJobUserTimeLimit; public uint LimitFlags; public UIntPtr MinimumWorkingSetSize; public UIntPtr MaximumWorkingSetSize; public uint ActiveProcessLimit; public UIntPtr Affinity; public uint PriorityClass; public uint SchedulingClass; }
+            [StructLayout(LayoutKind.Sequential)] struct IoCounters { public ulong ReadOperationCount; public ulong WriteOperationCount; public ulong OtherOperationCount; public ulong ReadTransferCount; public ulong WriteTransferCount; public ulong OtherTransferCount; }
+            [StructLayout(LayoutKind.Sequential)] struct ExtendedLimits { public BasicLimits Basic; public IoCounters Io; public UIntPtr ProcessMemoryLimit; public UIntPtr JobMemoryLimit; public UIntPtr PeakProcessMemoryUsed; public UIntPtr PeakJobMemoryUsed; }
+            [DllImport("kernel32.dll", SetLastError = true)] static extern IntPtr CreateJobObject(IntPtr attributes, IntPtr name);
+            [DllImport("kernel32.dll", SetLastError = true)] static extern bool SetInformationJobObject(IntPtr job, int infoClass, ref ExtendedLimits info, int length);
+            [DllImport("kernel32.dll", SetLastError = true)] static extern bool AssignProcessToJobObject(IntPtr job, IntPtr process);
+            [DllImport("kernel32.dll", SetLastError = true)] static extern bool QueryInformationJobObject(IntPtr job, int infoClass, IntPtr info, int length, IntPtr returned);
+            [DllImport("kernel32.dll", SetLastError = true)] static extern bool TerminateJobObject(IntPtr job, uint exitCode);
+            [DllImport("kernel32.dll")] static extern IntPtr GetCurrentProcess();
+            public static IntPtr Join() {
+              IntPtr job = CreateJobObject(IntPtr.Zero, IntPtr.Zero);
+              if (job == IntPtr.Zero) throw new Win32Exception();
+              ExtendedLimits limits = new ExtendedLimits();
+              limits.Basic.LimitFlags = 0x2000;
+              if (!SetInformationJobObject(job, 9, ref limits, Marshal.SizeOf(typeof(ExtendedLimits)))) throw new Win32Exception();
+              if (!AssignProcessToJobObject(job, GetCurrentProcess())) throw new Win32Exception();
+              return job;
+            }
+            public static long[] List(IntPtr job) {
+              int size = 8 + 4096 * IntPtr.Size;
+              IntPtr buffer = Marshal.AllocHGlobal(size);
+              try {
+                if (!QueryInformationJobObject(job, 3, buffer, size, IntPtr.Zero)) throw new Win32Exception();
+                int count = Marshal.ReadInt32(buffer, 4);
+                long[] ids = new long[count];
+                for (int index = 0; index < count; index++) ids[index] = Marshal.ReadIntPtr(buffer, 8 + index * IntPtr.Size).ToInt64();
+                return ids;
+              }
+              finally { Marshal.FreeHGlobal(buffer); }
+            }
+            public static void Stop(IntPtr job, uint exitCode) { if (!TerminateJobObject(job, exitCode)) throw new Win32Exception(); }
+          }
+          '@
+          $job = [FlakeProofJob]::Join()
+          & $Bash $Script
+          $status = $LASTEXITCODE
+          $left = @([FlakeProofJob]::List($job) | Where-Object { $_ -ne $PID } | Where-Object { $process = Get-Process -Id $_ -ErrorAction SilentlyContinue; $process -and $process.ProcessName -ne 'conhost' })
+          Set-Content -LiteralPath $Left -Value $left.Count
+          if ($left.Count -gt 0) { [FlakeProofJob]::Stop($job, [uint32] $status) }
+          exit $status
           PS1
+            shell_path=$(cygpath -w "$(command -v bash)")
           fi
+          marked() {
+            if [ "$RUNNER_OS" = Linux ]; then
+              { grep -lzxF "FLAKE_PROOF_RUN=$marker" /proc/[0-9]*/environ 2>/dev/null || true; } | sed 's#^/proc/##; s#/environ$##'
+            else
+              ps -A -E -ww -o pid= -o command= | awk -v marker="FLAKE_PROOF_RUN=$marker" 'index($0, marker) { print $1 }'
+            fi
+          }
           stop_run() {
             if [ "$RUNNER_OS" = Windows ]; then
-              pwsh -NoProfile -File "$tree" -Root "$winpid" -Since "$since" -Stop > /dev/null 2>&1 || true
+              kill -KILL "$pid" 2>/dev/null || true
             else
               kill "-$1" -- "-$pid" 2>/dev/null || true
+              for other in $(marked 2>/dev/null); do
+                kill "-$1" "$other" 2>/dev/null || true
+              done
             fi
           }
           run_left() {
-            if [ "$RUNNER_OS" = Windows ]; then
-              left=$(pwsh -NoProfile -File "$tree" -Root "$winpid" -Since "$since" 2>/dev/null) || left=unknown
-              [ "${left//[$'\r\n']/}" != 0 ]
-            else
-              kill -0 -- "-$pid" 2>/dev/null
-            fi
+            kill -0 -- "-$pid" 2>/dev/null && return 0
+            found=$(marked) || return 2
+            [ -n "$found" ]
           }
           trap 'if [ -n "$active" ]; then stop_run KILL; fi; if [ -n "$xvfb" ]; then kill "$xvfb" 2>/dev/null || true; fi' EXIT
           if [ "$VIRTUAL_DISPLAY" = true ] && [ "$RUNNER_OS" = Linux ]; then
@@ -495,14 +539,20 @@ jobs:
             fi
             reached="$RUNNER_TEMP/flake-proof-limit-$JOB-$run"
             status=0
-            since=$(( $(date +%s) - 1 ))
-            "${command[@]}" > "$log" 2>&1 &
+            marker="$JOB.$run.$$.$(date +%s)"
+            if [ "$RUNNER_OS" = Windows ]; then
+              script="$RUNNER_TEMP/flake-proof-run-$JOB.sh"
+              printf -v line '%q ' "${command[@]}"
+              printf '%s\n' "$line" > "$script"
+              left_file="$RUNNER_TEMP/flake-proof-left-$JOB-$run"
+              rm -f "$left_file"
+              FLAKE_PROOF_RUN="$marker" pwsh -NoProfile -NonInteractive -File "$launcher" -Bash "$shell_path" -Script "$(cygpath -w "$script")" -Left "$(cygpath -w "$left_file")" > "$log" 2>&1 &
+            else
+              FLAKE_PROOF_RUN="$marker" "${command[@]}" > "$log" 2>&1 &
+            fi
             pid=$!
             active=$pid
-            if [ "$RUNNER_OS" = Windows ]; then
-              winpid=$(cat "/proc/$pid/winpid" 2>/dev/null) || winpid=$pid
-            fi
-            # The watchdog sends TERM to the run's group at the limit and KILL 30 seconds later; its own sleeps go when it is stopped, so nothing outlives the run.
+            # The watchdog sends TERM to the run at the limit and KILL 30 seconds later; its own sleeps go when it is stopped, so nothing outlives the run.
             (
               trap 'kill "$nap" 2>/dev/null; exit 0' TERM
               sleep "$limit" & nap=$!
@@ -518,21 +568,47 @@ jobs:
             kill -TERM "$watchdog" 2>/dev/null || true
             wait "$watchdog" 2>/dev/null || true
             # A process the run left behind, such as a server, is stopped too, and the next run starts only once none is left.
-            if run_left; then
-              stop_run TERM
-              for second in $(seq 1 30); do
-                run_left || break
-                sleep 1
-              done
-              if run_left; then
-                stop_run KILL
-                sleep 5
+            if [ "$run" -lt "$RUNS" ]; then
+              after="before the next run"
+            else
+              after="before the job went on"
+            fi
+            if [ "$RUNNER_OS" = Windows ]; then
+              if [ -e "$reached" ]; then
+                :
+              elif ! count=$(tr -d '\r\n ' < "$left_file" 2>/dev/null) || ! [[ "$count" =~ ^[0-9]+$ ]]; then
+                echo "::error::Couldn't tell whether run $run left processes running: its launcher, which holds the run's job object, didn't report them; its log is kept in the job's artifact."
+                exit 1
+              elif [ "$count" -gt 0 ]; then
+                echo "Run $run left $count processes running, which were stopped $after."
               fi
-              if run_left; then
-                echo "::error::Run $run left processes that didn't stop within 35 seconds, so the next run couldn't start clean."
+            else
+              left=0
+              run_left || left=$?
+              if [ "$left" = 0 ]; then
+                stop_run TERM
+                for second in $(seq 1 30); do
+                  run_left || break
+                  sleep 1
+                done
+                if run_left; then
+                  stop_run KILL
+                  sleep 5
+                fi
+                left=0
+                run_left || left=$?
+                if [ "$left" = 0 ]; then
+                  echo "::error::Run $run left processes that didn't stop within 35 seconds, so they were still running $after."
+                  exit 1
+                fi
+                if [ "$left" = 1 ]; then
+                  echo "Run $run left processes running, which were stopped $after."
+                fi
+              fi
+              if [ "$left" = 2 ]; then
+                echo "::error::Couldn't tell whether run $run left processes running: ps failed."
                 exit 1
               fi
-              echo "Run $run left processes running, which were stopped before the next run."
             fi
             active=
             if [ "$keyring" = true ] && [ -e "$KEYRING/no-secret-service" ]; then
