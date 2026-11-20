@@ -88,7 +88,7 @@ on:
         default: ''
     secrets:
       registry-token:
-        description: The registry's publishing token from a repository or organization secret; with secrets inherit, the publish environment's PUBLISH_TOKEN takes its place, and without either, GitHub's registry takes the run's own token, and npm's registry takes trusted publishing
+        description: The registry's publishing token from a repository or organization secret; the publish environment's PUBLISH_TOKEN, which the publish job reads however the caller passes secrets, takes its place, and without either, GitHub's registry takes the run's own token, and npm's registry takes trusted publishing
         required: false
 
 permissions: {}
@@ -518,7 +518,7 @@ jobs:
       - name: Publish the packages
         env:
           npm_config_provenance: ${{ !github.event.repository.private && needs.versions.outputs.publish-registry-url == 'https://registry.npmjs.org' }}
-          NODE_AUTH_TOKEN: ${{ secrets.registry-token || secrets.PUBLISH_TOKEN || needs.versions.outputs.publish-registry-url == 'https://npm.pkg.github.com' && github.token || '' }}
+          NODE_AUTH_TOKEN: ${{ secrets.PUBLISH_TOKEN || secrets.registry-token || needs.versions.outputs.publish-registry-url == 'https://npm.pkg.github.com' && github.token || '' }}
         run: pipelines publish _packages "$RELEASE_VERSION" "$RELEASE_COMMIT" "$RELEASE_SCOPE" "$RELEASE_REGISTRY_URL" "$RELEASE_ACCESS"
 
   prune:
