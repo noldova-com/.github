@@ -75,6 +75,7 @@ src/noldova.example.shell/
 ```
 
 - Source trees use the concept categories `api`, `decorators`, `enums`, `exceptions`, `extensions`, `interfaces`, `intrinsics`, `models`, `services` and `types`; create only those the package uses.
+  A package with public test helpers adds `testing`, which holds them in the same categories, as [Packages](#packages) says.
   Domain subfolders are added only when they make current navigation clearer.
 - Models hold state, identities, options and results; services own operations such as tracking, parsing, reading, writing and verifying.
   A service holds no data of its own: it may hold the collaborators it calls, and a service that drives one operation, such as a reader, holds that operation's position.
@@ -124,12 +125,13 @@ public constructor(
   2. package imports, scoped and external;
   3. relative imports.
   Type-only, value, namespace and side-effect imports belong to their origin group.
-  Within a group, sort declarations and named imports as VS Code's Organize Imports does.
+  Within a group, declarations are sorted by their module specifier, and the names in each declaration's braces by the imported name; both compare case-insensitively, character by character, and a `type` modifier doesn't change a name's place.
   Required side-effect initialization order takes precedence; formatting never changes initialization behavior.
 
 ## API declarations
 
-- Each package exposes its API through `src/api/index.ts` and declares and documents it in a handwritten `src/api/index.d.ts`, the only files with doc comments.
+- Each package exposes its API through `src/api/index.ts`, and each further entry, such as the testing entry, through its own file beside it, such as `src/api/testing.ts`.
+  Each entry is declared and documented in a handwritten declaration file of the same name, such as `src/api/index.d.ts` and `src/api/testing.d.ts`, the only files with doc comments.
 - Every public type, member and overload has JSDoc:
   - `@param name description` for each parameter, without a hyphen: purpose, accepted inputs, constraints, units, defaults and callback obligations, beyond its name and type;
   - `@returns` for non-void results: meaning, ownership, ordering, absence and asynchronous completion; omitted for constructors; a `never` result or an `asserts` signature needs `@throws` and may also have `@returns`;
@@ -161,7 +163,7 @@ tests/services/snapshot-tracker.test.ts
 - npm is the only package manager.
 - Standalone automation is TypeScript; npm commands expose TypeScript entry points with arguments, not inline shell.
   Node runs the entry points directly, with no TypeScript runner while it can.
-- Scripts have no tests and no coverage requirement; the packages they build are tested.
+- Scripts have no coverage requirement and no mirrored test files; the packages they build are tested, and a script gets a test of its own only for an outcome no run shows, as [TESTING.md](../TESTING.md#coverage) says.
 
 ## Packages
 
@@ -172,7 +174,7 @@ tests/services/snapshot-tracker.test.ts
 - The project's own scripts build the packages: each is built into `_build/packages/<folder name>`, packed with `npm pack` into `_packages/`, and installed from there with `npm install --no-save`, so a library's or a test's own packages never enter its manifest or lockfile.
   An app built on Desktop instead pins its own repository's packages in its one lock, as `file:` archives from `_packages/`, so that one lock covers the whole app, and publishes none of them; a library repository and every test keep installing with `--no-save`, outside the lock.
   No third-party build or packaging tool does this.
-- A package's public test helpers live in `src/testing/`, a source tree beside `src/app/` with the same concept categories.
+- A package's public test helpers live in `src/testing/`, beside the concept folders of `src/`, organized in the same concept categories.
   Only the package's testing entry, `src/api/testing.ts`, reaches them, so an app's bundle never takes them, and no other entry imports them or the test runner.
 - A package that needs a compiler beyond `tsc`, such as Angular's compiler for components, keeps its own build script beside it, which the shared build calls in place of `tsc`.
 - Everything that uses a package, other packages, apps and tests, installs its packed `.tgz`, exactly as an outside user would; never a path alias or a relative import into another package's source.
