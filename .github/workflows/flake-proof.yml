@@ -410,7 +410,43 @@ jobs:
           command=(npm run "$SCRIPT" -- ${filters[@]+"${filters[@]}"})
           keyring=false
           xvfb=
-          trap 'if [ -n "$xvfb" ]; then kill "$xvfb" 2>/dev/null || true; fi' EXIT
+          # Each run starts in a process group of its own, so stopping it stops everything it started, the test runner, browsers and servers too.
+          # Windows' programs keep no process group, so there the run is the processes its first one started, found through their parents
+          # and limited to those started since the run, which also finds a child whose parent has already exited.
+          set -m
+          active=
+          if [ "$RUNNER_OS" = Windows ]; then
+            tree="$RUNNER_TEMP/flake-proof-tree-$JOB.ps1"
+            cat > "$tree" <<'PS1'
+          param([long] $Root, [long] $Since, [switch] $Stop)
+          $from = [DateTimeOffset]::FromUnixTimeSeconds($Since).LocalDateTime
+          $all = @(Get-CimInstance Win32_Process | Where-Object { $_.CreationDate -ge $from })
+          $ids = @($Root)
+          do {
+            $more = @($all | Where-Object { $ids -contains $_.ParentProcessId -and $ids -notcontains $_.ProcessId } | ForEach-Object { $_.ProcessId })
+            $ids += $more
+          } while ($more.Count -gt 0)
+          $left = @($all | Where-Object { $ids -contains $_.ProcessId })
+          if ($Stop) { $left | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue } }
+          $left.Count
+          PS1
+          fi
+          stop_run() {
+            if [ "$RUNNER_OS" = Windows ]; then
+              pwsh -NoProfile -File "$tree" -Root "$winpid" -Since "$since" -Stop > /dev/null 2>&1 || true
+            else
+              kill "-$1" -- "-$pid" 2>/dev/null || true
+            fi
+          }
+          run_left() {
+            if [ "$RUNNER_OS" = Windows ]; then
+              left=$(pwsh -NoProfile -File "$tree" -Root "$winpid" -Since "$since" 2>/dev/null) || left=unknown
+              [ "${left//[$'\r\n']/}" != 0 ]
+            else
+              kill -0 -- "-$pid" 2>/dev/null
+            fi
+          }
+          trap 'if [ -n "$active" ]; then stop_run KILL; fi; if [ -n "$xvfb" ]; then kill "$xvfb" 2>/dev/null || true; fi' EXIT
           if [ "$VIRTUAL_DISPLAY" = true ] && [ "$RUNNER_OS" = Linux ]; then
             command -v gnome-keyring-daemon >/dev/null || { echo "::error::gnome-keyring isn't installed on this runner; display mode needs it."; exit 1; }
             for program in Xvfb xauth dbus-run-session gdbus; do
@@ -459,23 +495,46 @@ jobs:
             fi
             reached="$RUNNER_TEMP/flake-proof-limit-$JOB-$run"
             status=0
+            since=$(( $(date +%s) - 1 ))
             "${command[@]}" > "$log" 2>&1 &
             pid=$!
-            # The watchdog sends TERM at the limit and KILL 30 seconds later; its own sleeps go when it is stopped, so nothing outlives the run.
+            active=$pid
+            if [ "$RUNNER_OS" = Windows ]; then
+              winpid=$(cat "/proc/$pid/winpid" 2>/dev/null) || winpid=$pid
+            fi
+            # The watchdog sends TERM to the run's group at the limit and KILL 30 seconds later; its own sleeps go when it is stopped, so nothing outlives the run.
             (
               trap 'kill "$nap" 2>/dev/null; exit 0' TERM
               sleep "$limit" & nap=$!
               wait "$nap"
               touch "$reached"
-              kill -TERM "$pid" 2>/dev/null
+              stop_run TERM
               sleep 30 & nap=$!
               wait "$nap"
-              kill -KILL "$pid" 2>/dev/null
+              stop_run KILL
             ) > /dev/null 2>&1 &
             watchdog=$!
             wait "$pid" || status=$?
             kill -TERM "$watchdog" 2>/dev/null || true
             wait "$watchdog" 2>/dev/null || true
+            # A process the run left behind, such as a server, is stopped too, and the next run starts only once none is left.
+            if run_left; then
+              stop_run TERM
+              for second in $(seq 1 30); do
+                run_left || break
+                sleep 1
+              done
+              if run_left; then
+                stop_run KILL
+                sleep 5
+              fi
+              if run_left; then
+                echo "::error::Run $run left processes that didn't stop within 35 seconds, so the next run couldn't start clean."
+                exit 1
+              fi
+              echo "Run $run left processes running, which were stopped before the next run."
+            fi
+            active=
             if [ "$keyring" = true ] && [ -e "$KEYRING/no-secret-service" ]; then
               # The runner's keyring, not the test, failed: that is no flake, so the job ends here, as when Xvfb doesn't start.
               echo "::error::The unlocked keyring did not take org.freedesktop.secrets on the session bus within 30 seconds for run $run, so the run's test never started; its log is kept in the job's artifact."
@@ -500,8 +559,9 @@ jobs:
             fi
             for folder in ${reports[@]+"${reports[@]}"}; do
               if [ -e "$folder" ]; then
-                mkdir -p "_build/flake-proof/run-$run/$(dirname "$folder")"
-                mv "$folder" "_build/flake-proof/run-$run/$folder"
+                if ! { mkdir -p "_build/flake-proof/run-$run/$(dirname "$folder")" && mv "$folder" "_build/flake-proof/run-$run/$folder"; }; then
+                  echo "::warning::Run $run's $folder couldn't move into the artifact, so the artifact lacks it."
+                fi
               fi
             done
           done
