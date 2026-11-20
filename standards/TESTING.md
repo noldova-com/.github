@@ -9,8 +9,8 @@ A flaky test is a bug: file it, fix its cause, and never rerun a check to make i
 - **100% UI coverage:** every user workflow and every view has a UI test of the real application ([UI automation](#ui-automation)).
 - **Every target:** the whole suite, unit and UI, passes with 100% coverage on every delivery target.
 - **Fast:** a unit test file finishes in under 1 second, a component spec file's median test in under 100 milliseconds, and the gate (build, checks and unit tests) in under 5 minutes, all measured on a test machine.
-  The runner fails a file or a gate that goes over; a slow test is fixed, never given a longer budget.
-  Only a maintainer may accept a unit test file over 1 second; the repository's README then names the file, its time and why.
+  The runner fails a file or a gate that goes over; a slow test is fixed, never given a longer budget, except a unit test file a maintainer accepts.
+  Only a maintainer may accept a unit test file over 1 second: the repository's README names it in its Checks section, with its time and why, and the runner reads that list, so it fails every unit test file over 1 second that the list doesn't name.
   The README also lists each component test over 1 second, with its time and cause.
   No test waits longer than the event it needs.
 - **Parallel:** any two tests can run at the same time.
@@ -35,13 +35,15 @@ A flaky test is a bug: file it, fix its cause, and never rerun a check to make i
 
 - **No test-only seams.** Never change production code solely to accommodate tests or coverage: no widened APIs or new exports, weakened visibility, test-only parameters or paths, or altered ownership.
   A test uses an accepted product boundary, or is redesigned around one.
-  Two exceptions:
+  Three exceptions:
   - a test runner may take how it creates its workers and its clock, with its timers, as constructor parameters, defaulting to the real ones, so its own tests can force an order of worker events or a time without sleeps;
-  - a long-running program may read its wait times, such as intervals, limits and timeouts, from environment variables through one helper that keeps the real value when a variable is unset or invalid, so its tests can shorten waits instead of sleeping them out; only tests set those variables, and the program's README names them.
+  - a long-running program may read its wait times, such as intervals, limits and timeouts, from environment variables through one helper that keeps the real value when a variable is unset or invalid, so its tests can shorten waits instead of sleeping them out; only tests set those variables, and the program's README names them;
+  - code whose timing no product boundary controls, such as how long it waits for a download's body or how long a retry pauses and how often it tries, may take the operation that sets that timing and those values as parameters defaulting to the real ones, so its tests can reach each path without sleeps, as [Determinism](#determinism) asks of the code's own timers; no production caller passes them, and the repository's README names each one in its Checks section with why no product boundary controls it.
 - Test inputs, expected results and fixtures stay independent of production values, so an output change cannot also change the expected answer.
 - Every executable production file has a test file that mirrors its path.
   A file is executable when it has a function body; a file that only declares types, values or re-exports is not, though it may still have a test.
-  Every test file mirrors a production file that exists; fixtures, setup and configuration files and end-to-end workflows are exempt.
+  Repository automation isn't production code here: [Coverage](#coverage) says when it gets a test.
+  Every test file mirrors a production file that exists; fixtures, setup and configuration files, end-to-end workflows and the tests [Coverage](#coverage) gives repository automation are exempt.
 - Doubles of external tools are named fakes with scripted behavior.
 - Tests against a live external service are labelled, excluded from the default gate and separately authorized; they record the service, tool version, observed settings and scope, and missing observations stay unknown.
 
