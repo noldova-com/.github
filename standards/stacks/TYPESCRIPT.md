@@ -125,7 +125,8 @@ public constructor(
   2. package imports, scoped and external;
   3. relative imports.
   Type-only, value, namespace and side-effect imports belong to their origin group.
-  Within a group, declarations are sorted by their module specifier, and the names in each declaration's braces by the imported name; both compare case-insensitively, character by character, and a `type` modifier doesn't change a name's place.
+  Within a group, declarations are sorted by their module specifier, and the names in each declaration's braces by the imported name, both compared by UTF-16 code unit, either as written or with both sides lowercased; type-only names sort among the others or after them.
+  A file sorts every group the same way.
   Required side-effect initialization order takes precedence; formatting never changes initialization behavior.
 
 ## API declarations
