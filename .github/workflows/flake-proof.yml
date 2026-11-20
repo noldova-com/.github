@@ -461,9 +461,9 @@ jobs:
           $job = [FlakeProofJob]::Join()
           & $Bash $Script
           $status = $LASTEXITCODE
-          $left = @([FlakeProofJob]::List($job) | Where-Object { $_ -ne $PID } | Where-Object { $process = Get-Process -Id $_ -ErrorAction SilentlyContinue; $process -and $process.ProcessName -ne 'conhost' })
-          Set-Content -LiteralPath $Left -Value $left.Count
-          if ($left.Count -gt 0) { [FlakeProofJob]::Stop($job, [uint32] $status) }
+          $remaining = @([FlakeProofJob]::List($job) | Where-Object { $_ -ne $PID } | Where-Object { $process = Get-Process -Id $_ -ErrorAction SilentlyContinue; $process -and $process.ProcessName -ne 'conhost' })
+          Set-Content -LiteralPath $Left -Value $remaining.Count
+          if ($remaining.Count -gt 0) { [FlakeProofJob]::Stop($job, [uint32] $status) }
           exit $status
           PS1
             shell_path=$(cygpath -w "$(command -v bash)")
@@ -472,7 +472,7 @@ jobs:
             if [ "$RUNNER_OS" = Linux ]; then
               { grep -lzxF "FLAKE_PROOF_RUN=$marker" /proc/[0-9]*/environ 2>/dev/null || true; } | sed 's#^/proc/##; s#/environ$##'
             else
-              ps -A -E -ww -o pid= -o command= | awk -v marker="FLAKE_PROOF_RUN=$marker" 'index($0, marker) { print $1 }'
+              ps -A -E -ww -o pid= -o command= | awk -v marker="$marker" '{ for (field = 2; field <= NF; field++) if ($field == "FLAKE_PROOF_RUN=" marker) { print $1; next } }'
             fi
           }
           stop_run() {
@@ -580,7 +580,7 @@ jobs:
                 echo "::error::Couldn't tell whether run $run left processes running: its launcher, which holds the run's job object, didn't report them; its log is kept in the job's artifact."
                 exit 1
               elif [ "$count" -gt 0 ]; then
-                echo "Run $run left $count processes running, which were stopped $after."
+                echo "Run $run left processes running, which were stopped $after."
               fi
             else
               left=0
