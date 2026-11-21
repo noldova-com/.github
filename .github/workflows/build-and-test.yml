@@ -627,7 +627,7 @@ jobs:
           export SHARD
           echo "report=$report" >> "$GITHUB_OUTPUT"
           echo "display-log=${report/end-to-end-report/virtual-display-log}" >> "$GITHUB_OUTPUT"
-          for program in Xvfb xauth dbus-run-session gdbus gnome-keyring-daemon; do
+          for program in Xvfb xauth dbus-daemon gdbus gnome-keyring-daemon; do
             if ! command -v "$program" >/dev/null; then
               echo "::error::This runner has no $program, which the end-to-end test runs under."
               exit 1
@@ -664,8 +664,9 @@ jobs:
           xauth -q add ":$display" . "$cookie"
           echo "Xvfb serves display :$display; the test may run for $limit seconds."
           status=0
-          # The keyring stays in the foreground, the test's own child, and ends with the test: a keyring that forked into the background would outlive it.
-          DISPLAY=":$display" timeout --kill-after=30 "$limit" dbus-run-session -- sh -c 'echo | XDG_DATA_HOME="$RUNNER_TEMP/keyring-data" gnome-keyring-daemon --foreground --unlock --components=secrets --control-directory="$RUNNER_TEMP/keyring-control" >/dev/null & keyring=$!; gdbus wait --session --timeout 30 org.freedesktop.secrets || { echo "::error::The unlocked keyring did not take org.freedesktop.secrets on the session bus within 30 seconds."; kill "$keyring" 2>/dev/null; exit 1; }; status=0; npm run "test:$END_TO_END" $SHARD || status=$?; kill "$keyring" 2>/dev/null; wait "$keyring" 2>/dev/null; exit "$status"' || status=$?
+          # The session bus and the keyring are the test's own children, in the foreground, and the test's shell ends only once both have ended after it:
+          # a keyring that forked into the background outlived the test, and dbus-run-session returns without waiting for the bus it stops.
+          DISPLAY=":$display" timeout --kill-after=30 "$limit" sh -c 'mkfifo "$RUNNER_TEMP/keyring-bus"; dbus-daemon --session --nofork --print-address=3 3> "$RUNNER_TEMP/keyring-bus" & bus=$!; read -r DBUS_SESSION_BUS_ADDRESS < "$RUNNER_TEMP/keyring-bus" || { echo "::error::The session bus did not start."; wait; exit 1; }; export DBUS_SESSION_BUS_ADDRESS; echo | XDG_DATA_HOME="$RUNNER_TEMP/keyring-data" gnome-keyring-daemon --foreground --unlock --components=secrets --control-directory="$RUNNER_TEMP/keyring-control" >/dev/null & keyring=$!; gdbus wait --session --timeout 30 org.freedesktop.secrets || { echo "::error::The unlocked keyring did not take org.freedesktop.secrets on the session bus within 30 seconds."; kill "$keyring" "$bus" 2>/dev/null; wait; exit 1; }; status=0; npm run "test:$END_TO_END" $SHARD || status=$?; kill "$keyring" "$bus" 2>/dev/null; wait; exit "$status"' || status=$?
           if [ "$status" = 124 ] || [ "$status" = 137 ]; then
             echo "::error::The end-to-end test ran past its $limit seconds and was stopped, three minutes before the job's timeout."
           fi

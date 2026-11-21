@@ -533,12 +533,13 @@ jobs:
           trap 'if [ -n "$active" ]; then stop_run KILL; fi; if [ -n "$xvfb" ]; then kill "$xvfb" 2>/dev/null || true; fi' EXIT
           if [ "$VIRTUAL_DISPLAY" = true ] && [ "$RUNNER_OS" = Linux ]; then
             command -v gnome-keyring-daemon >/dev/null || { echo "::error::gnome-keyring isn't installed on this runner; display mode needs it."; exit 1; }
-            for program in Xvfb xauth dbus-run-session gdbus; do
+            for program in Xvfb xauth dbus-daemon gdbus; do
               command -v "$program" >/dev/null || { echo "::error::This runner has no $program, which display mode runs each run under."; exit 1; }
             done
             keyring=true
-            # The keyring stays in the foreground, the run's own child, and ends with the run's command: a keyring that forked into the background would outlive the run.
-            command=(dbus-run-session -- sh -c 'echo | XDG_DATA_HOME="$KEYRING/data" gnome-keyring-daemon --foreground --unlock --components=secrets --control-directory="$KEYRING/control" >/dev/null & keyring=$!; gdbus wait --session --timeout 30 org.freedesktop.secrets || { echo "The unlocked keyring did not take org.freedesktop.secrets on the session bus within 30 seconds."; touch "$KEYRING/no-secret-service"; kill "$keyring" 2>/dev/null; exit 1; }; status=0; "$@" || status=$?; kill "$keyring" 2>/dev/null; wait "$keyring" 2>/dev/null; exit "$status"' sh "${command[@]}")
+            # The session bus and the keyring are the run's own children, in the foreground, and the run ends only once both have ended after its command:
+            # a keyring that forked into the background outlived the run, and dbus-run-session returns without waiting for the bus it stops.
+            command=(sh -c 'mkfifo "$KEYRING/bus"; dbus-daemon --session --nofork --print-address=3 3> "$KEYRING/bus" & bus=$!; read -r DBUS_SESSION_BUS_ADDRESS < "$KEYRING/bus" || { echo "The session bus did not start."; touch "$KEYRING/no-session-bus"; wait; exit 1; }; export DBUS_SESSION_BUS_ADDRESS; echo | XDG_DATA_HOME="$KEYRING/data" gnome-keyring-daemon --foreground --unlock --components=secrets --control-directory="$KEYRING/control" >/dev/null & keyring=$!; gdbus wait --session --timeout 30 org.freedesktop.secrets || { echo "The unlocked keyring did not take org.freedesktop.secrets on the session bus within 30 seconds."; touch "$KEYRING/no-secret-service"; kill "$keyring" "$bus" 2>/dev/null; wait; exit 1; }; status=0; "$@" || status=$?; kill "$keyring" "$bus" 2>/dev/null; wait; exit "$status"' sh "${command[@]}")
           fi
           # Each run may take an even share of the job's time still left, keeping three minutes for the artifact, so a run that hangs is named and counted as failed
           # before the job's timeout-minutes end the job unnamed. A watchdog in this shell bounds it, on every runner, since not every runner has GNU timeout.
@@ -659,6 +660,10 @@ jobs:
               fi
             fi
             active=
+            if [ "$keyring" = true ] && [ -e "$KEYRING/no-session-bus" ]; then
+              echo "::error::The session bus didn't start for run $run, so the run's test never started; its log is kept in the job's artifact."
+              exit 1
+            fi
             if [ "$keyring" = true ] && [ -e "$KEYRING/no-secret-service" ]; then
               # The runner's keyring, not the test, failed: that is no flake, so the job ends here, as when Xvfb doesn't start.
               echo "::error::The unlocked keyring did not take org.freedesktop.secrets on the session bus within 30 seconds for run $run, so the run's test never started; its log is kept in the job's artifact."
