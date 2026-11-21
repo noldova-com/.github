@@ -27,7 +27,7 @@ These requirements follow [Electron's security guidance](https://www.electronjs.
 - Keep sandbox, context isolation, web security and the Content Security Policy intact under automation, and inspect packaging, debugger and fuse requirements explicitly.
 - A suite launched with GPU acceleration and software GL turned off has no WebGL; drawing with WebGL needs its own check with GPU acceleration.
 - The test host supplies the required native libraries and a working display; Linux CI may use Xvfb.
-  Linux workflows run with a session bus of their own (a `dbus-daemon --session` each run starts and waits for), as on a Linux desktop.
+  Linux workflows run with a session bus of the run's own, as on a Linux desktop, ended and waited for with the run, so no bus outlives it.
   A local WSL graphical session is not a witness for a hosted VM or Xvfb.
 
 ## Viewport and pointer
