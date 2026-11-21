@@ -11,6 +11,11 @@ It adds to [CODE.md](../CODE.md), [TESTING.md](../TESTING.md) and [SECURITY.md](
   An external declaration that requires `any` keeps it at that boundary; project code accepts and narrows `unknown`.
 - Never bypass typing, visibility, construction, invocation or invariants with `Reflect`, `Object` APIs, casts or call indirection.
 - Inside a [boundary](../CODE.md#failures), use no `typeof`, `instanceof`, `Array.isArray` or null guards on declared types, and never a non-null assertion for an invariant.
+- Where code checks a value's type or absence, it calls the checks `@noldova/context.core` adds to `Object` and `String`, never `typeof`, `=== undefined`, `=== null` or their negations written out: `Object.isUndefined`, `isNull`, `isNullOrUndefined`, `isObject`, `isPlainObject`, `isFunction`, `isNumber`, `isString`, `isBigInt`, `isBoolean` and `isSymbol`, and `String.isNullOrEmpty` and `isNullOrWhitespace`.
+  A package that calls them imports `@noldova/context.core` and depends on it.
+  Two places write the checks out: `@noldova/context.core` itself, which defines them, and a repository's root scripts, which run before the install and import nothing.
+  A comparison with a sentinel of the code's own, such as a private symbol, stays a comparison.
+  Existing code moves to the checks when a file is touched.
 - `undefined` means absent; `null` means deliberately set to nothing; nothing is `T | null | undefined`.
   A class field whose value may be absent is `T | undefined` and assigned in the constructor; a compiled field always exists, so `?` on a field would claim an absence the object never has.
   The one exception is a field that implements an interface's optional member: it stays `?`, as the interface declares it, since `exactOptionalPropertyTypes` refuses `T | undefined` there.
