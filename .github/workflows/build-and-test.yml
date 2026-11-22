@@ -223,15 +223,15 @@ jobs:
               exit 1
             fi
             if [ "$tests" = false ]; then
-              entries+=("{\"target\":\"$target\",\"name\":\"$name, build only\",\"part\":1,\"parts\":1,\"tests\":false}")
+              entries+=("{\"target\":\"$target\",\"name\":\"$name, build only\",\"part\":1,\"parts\":1,\"build-only\":true}")
               continue
             fi
             if [ "$count" -eq 1 ]; then
-              entries+=("{\"target\":\"$target\",\"name\":\"$name\",\"part\":1,\"parts\":1,\"tests\":true}")
+              entries+=("{\"target\":\"$target\",\"name\":\"$name\",\"part\":1,\"parts\":1}")
               continue
             fi
             for ((part = 1; part <= count; part++)); do
-              entries+=("{\"target\":\"$target\",\"name\":\"$name ($part of $count)\",\"part\":$part,\"parts\":$count,\"tests\":true}")
+              entries+=("{\"target\":\"$target\",\"name\":\"$name ($part of $count)\",\"part\":$part,\"parts\":$count}")
             done
             merges+=("{\"target\":\"$target\",\"name\":\"$name\",\"parts\":$count}")
           done
@@ -391,7 +391,7 @@ jobs:
           echo "Unprivileged user namespaces are allowed, so Chromium's sandbox starts without its setuid helper."
 
       - name: Test the packages
-        if: matrix.tests != false
+        if: ${{ !matrix.build-only }}
         env:
           NOLDOVA_SEPARATE_TEST: ${{ inputs.separate-test }}
           SHARD: ${{ matrix.parts > 1 && format('--shard={0}/{1}', matrix.part, matrix.parts) || '' }}
