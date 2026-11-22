@@ -13,6 +13,10 @@ on:
         description: The targets to build and test on, separated by spaces, from linux-x64, linux-arm64, windows-x64, windows-arm64, macos-x64 and macos-arm64
         required: true
         type: string
+      test-targets:
+        description: The targets among targets whose tests run, separated by spaces, such as 'linux-x64 windows-x64 macos-arm64'; the others build and check what they build, the archives too where the repository publishes, without running its tests; empty tests every target
+        type: string
+        default: ''
       publishes:
         description: Whether the repository releases packages, so the Linux x64 target also checks that a second build packs the same archives, and each target that the archives pass the release's check
         type: boolean
@@ -133,7 +137,7 @@ jobs:
   plan:
     name: Plan the parts
     needs: versions
-    if: inputs.shards != '' || inputs.separate-test != '' || inputs.shard-outputs != '' || inputs.separate-test-report != '' || inputs.end-to-end-shards != ''
+    if: inputs.shards != '' || inputs.separate-test != '' || inputs.shard-outputs != '' || inputs.separate-test-report != '' || inputs.end-to-end-shards != '' || inputs.test-targets != ''
     runs-on: ${{ fromJSON(needs.versions.outputs.runs-on-linux-x64) }}
     timeout-minutes: 5
     permissions: {}
@@ -152,6 +156,7 @@ jobs:
           SEPARATE_TEST_REPORT: ${{ inputs.separate-test-report }}
           END_TO_END: ${{ inputs.end-to-end }}
           END_TO_END_SHARDS: ${{ inputs.end-to-end-shards }}
+          TEST_TARGETS: ${{ inputs.test-targets }}
         run: |
           set -euo pipefail
           if [ -n "$SEPARATE_TEST" ] && [[ ! "$SEPARATE_TEST" =~ ^[a-z][a-z0-9-]*$ ]]; then
@@ -187,6 +192,15 @@ jobs:
             fi
             parts[${BASH_REMATCH[1]}]=${BASH_REMATCH[2]}
           done
+          declare -A tested=()
+          read -ra names <<< "$TEST_TARGETS"
+          for target in "${names[@]}"; do
+            if [ -n "${tested[$target]:-}" ]; then
+              echo "::error::test-targets names $target twice."
+              exit 1
+            fi
+            tested[$target]=1
+          done
           entries=()
           merges=()
           entry='\{"target":"([a-z0-9-]+)","name":"([^"]+)"\}(.*)$'
@@ -197,6 +211,21 @@ jobs:
             rest=${BASH_REMATCH[3]}
             count=${parts[$target]:-1}
             unset "parts[$target]"
+            tests=true
+            if [ "${#names[@]}" -gt 0 ]; then
+              if [ -z "${tested[$target]:-}" ]; then
+                tests=false
+              fi
+              unset "tested[$target]"
+            fi
+            if [ "$tests" = false ] && [ "$count" -gt 1 ]; then
+              echo "::error::shards splits $target's tests, which test-targets leaves out."
+              exit 1
+            fi
+            if [ "$tests" = false ]; then
+              entries+=("{\"target\":\"$target\",\"name\":\"$name, build only\",\"part\":1,\"parts\":1,\"build-only\":true}")
+              continue
+            fi
             if [ "$count" -eq 1 ]; then
               entries+=("{\"target\":\"$target\",\"name\":\"$name\",\"part\":1,\"parts\":1}")
               continue
@@ -208,6 +237,10 @@ jobs:
           done
           if [ "${#parts[@]}" -gt 0 ]; then
             echo "::error::shards names ${!parts[*]}, which targets doesn't list."
+            exit 1
+          fi
+          if [ "${#tested[@]}" -gt 0 ]; then
+            echo "::error::test-targets names ${!tested[*]}, which targets doesn't list."
             exit 1
           fi
           targets="[$(IFS=,; echo "${entries[*]}")]"
@@ -358,6 +391,7 @@ jobs:
           echo "Unprivileged user namespaces are allowed, so Chromium's sandbox starts without its setuid helper."
 
       - name: Test the packages
+        if: ${{ !matrix.build-only }}
         env:
           NOLDOVA_SEPARATE_TEST: ${{ inputs.separate-test }}
           SHARD: ${{ matrix.parts > 1 && format('--shard={0}/{1}', matrix.part, matrix.parts) || '' }}
@@ -746,7 +780,7 @@ jobs:
           SEPARATE_RESULT: ${{ needs.separate-test.result }}
           MERGE_RESULT: ${{ needs.merge-parts.result }}
           END_TO_END_RESULT: ${{ needs.end-to-end.result }}
-          PLANNED: ${{ inputs.shards != '' || inputs.separate-test != '' || inputs.shard-outputs != '' || inputs.separate-test-report != '' || inputs.end-to-end-shards != '' }}
+          PLANNED: ${{ inputs.shards != '' || inputs.separate-test != '' || inputs.shard-outputs != '' || inputs.separate-test-report != '' || inputs.end-to-end-shards != '' || inputs.test-targets != '' }}
           SEPARATE: ${{ inputs.separate-test != '' }}
           MERGED: ${{ inputs.shard-outputs != '' }}
           END_TO_END: ${{ inputs.end-to-end != '' }}
