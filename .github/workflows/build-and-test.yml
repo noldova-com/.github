@@ -397,6 +397,30 @@ jobs:
           SHARD: ${{ matrix.parts > 1 && format('--shard={0}/{1}', matrix.part, matrix.parts) || '' }}
         run: npm run test -- --skip-test-details --skip-coverage-details $SHARD
 
+      - name: Report the temporary folder's drive after a failure
+        if: failure() && runner.os == 'Windows' && runner.environment == 'github-hosted'
+        timeout-minutes: 2
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $folder = $env:TEMP
+          $letter = (Split-Path -Qualifier $folder).TrimEnd(':')
+          Get-Volume -DriveLetter $letter | Format-List DriveLetter, FileSystem, HealthStatus, OperationalStatus, Size, SizeRemaining
+          Get-Item -LiteralPath $folder -Force | Format-List FullName, Attributes, LastWriteTimeUtc
+          "Entries in ${folder}: $((Get-ChildItem -LiteralPath $folder -Force -ErrorAction Continue | Measure-Object).Count)"
+          $probe = Join-Path $folder "write-probe-$PID"
+          try {
+            [IO.File]::WriteAllText($probe, 'probe')
+            Remove-Item -LiteralPath $probe
+            "A new file in $folder can be written and removed."
+          } catch {
+            $failure = $_.Exception.GetBaseException()
+            "Writing a new file in $folder failed: $($failure.GetType().FullName), HResult $('0x{0:X8}' -f $failure.HResult): $($failure.Message)"
+          }
+          Get-CimInstance Win32_OperatingSystem | Format-List FreePhysicalMemory, TotalVisibleMemorySize, FreeVirtualMemory, TotalVirtualMemorySize
+          Get-WinEvent -FilterHashtable @{ LogName = 'System'; Level = 1, 2, 3; StartTime = (Get-Date).AddHours(-2) } -MaxEvents 40 -ErrorAction SilentlyContinue |
+            Format-Table -Wrap TimeCreated, ProviderName, Id, Message
+
       - name: Keep the part's outputs
         id: keep-part
         if: inputs.shard-outputs != '' && matrix.parts > 1
