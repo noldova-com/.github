@@ -59,7 +59,7 @@ on:
         type: string
         default: ''
       retention-days:
-        description: Overrides the days versions.yml keeps the addons and archives, 1 to 90
+        description: Overrides the days versions.yml keeps the addons, 1 to 90; the checked archives the publish job takes are kept 35 days whatever it says
         type: string
         default: ''
       runs-on-linux-x64:
@@ -88,7 +88,7 @@ on:
         default: ''
     secrets:
       registry-token:
-        description: The registry's publishing token; without it, GitHub's registry takes the run's own token, and npm's registry takes trusted publishing
+        description: The registry's publishing token from a repository or organization secret; the publish environment's PUBLISH_TOKEN, which the publish job reads however the caller passes secrets, takes its place, and without either, GitHub's registry takes the run's own token, and npm's registry takes trusted publishing
         required: false
 
 permissions: {}
@@ -102,7 +102,7 @@ env:
   RELEASE_VERSION: ${{ inputs.version }}
   RELEASE_COMMIT: ${{ inputs.commit }}
   RELEASE_KEEP_VERSIONS: ${{ inputs.keep-versions }}
-  RELEASE_TOOL: '@noldova/tools.pipelines.github@0.0.23'
+  RELEASE_TOOL: '@noldova/tools.pipelines.github@0.0.24'
 
 jobs:
   versions:
@@ -463,7 +463,7 @@ jobs:
           name: archives
           path: _packages/*.tgz
           if-no-files-found: error
-          retention-days: ${{ needs.versions.outputs.retention-days }}
+          retention-days: 35
 
   publish:
     name: Publish to the registry
@@ -518,7 +518,7 @@ jobs:
       - name: Publish the packages
         env:
           npm_config_provenance: ${{ !github.event.repository.private && needs.versions.outputs.publish-registry-url == 'https://registry.npmjs.org' }}
-          NODE_AUTH_TOKEN: ${{ secrets.registry-token || needs.versions.outputs.publish-registry-url == 'https://npm.pkg.github.com' && github.token || '' }}
+          NODE_AUTH_TOKEN: ${{ secrets.PUBLISH_TOKEN || secrets.registry-token || needs.versions.outputs.publish-registry-url == 'https://npm.pkg.github.com' && github.token || '' }}
         run: pipelines publish _packages "$RELEASE_VERSION" "$RELEASE_COMMIT" "$RELEASE_SCOPE" "$RELEASE_REGISTRY_URL" "$RELEASE_ACCESS"
 
   prune:

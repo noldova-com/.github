@@ -35,7 +35,7 @@ on:
         type: string
         default: ''
       display:
-        description: Runs each run on Linux under a virtual display and a session bus, for a test that opens windows
+        description: Runs each run on Linux under a virtual display and a session bus, and gives GitHub's Windows and macOS runners a 1920×1080 screen, for a test that opens windows
         type: boolean
         default: false
       reports:
@@ -154,16 +154,16 @@ jobs:
               exit 1
             fi
           done
-          if ! [[ "$RUNS" =~ ^[0-9]+$ ]] || [ "$RUNS" -lt 1 ] || [ "$RUNS" -gt 200 ]; then
-            echo "::error::runs must be a whole number from 1 to 200."
+          if ! [[ "$RUNS" =~ ^[1-9][0-9]{0,2}$ ]] || [ "$RUNS" -gt 200 ]; then
+            echo "::error::runs must be a whole number from 1 to 200, with no leading zero."
             exit 1
           fi
-          if ! [[ "$JOBS" =~ ^[0-9]+$ ]] || [ "$JOBS" -lt 1 ] || [ "$JOBS" -gt 4 ]; then
-            echo "::error::jobs must be a whole number from 1 to 4."
+          if ! [[ "$JOBS" =~ ^[1-9]$ ]] || [ "$JOBS" -gt 4 ]; then
+            echo "::error::jobs must be a whole number from 1 to 4, with no leading zero."
             exit 1
           fi
-          if ! [[ "$TIMEOUT" =~ ^[0-9]+$ ]] || [ "$TIMEOUT" -lt 1 ] || [ "$TIMEOUT" -gt 360 ]; then
-            echo "::error::timeout-minutes must be a whole number from 1 to 360."
+          if ! [[ "$TIMEOUT" =~ ^[1-9][0-9]{0,2}$ ]] || [ "$TIMEOUT" -gt 360 ]; then
+            echo "::error::timeout-minutes must be a whole number from 1 to 360, with no leading zero."
             exit 1
           fi
           read -ra targets <<< "$TARGETS"
@@ -271,8 +271,127 @@ jobs:
 
       - name: Install the virtual display, the session bus and the keyring on GitHub's runner
         if: inputs.display && runner.os == 'Linux' && runner.environment == 'github-hosted'
+        timeout-minutes: 10
+        run: |
+          apt=(sudo DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=600 -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30)
+          packages=(xvfb xauth dbus-daemon dbus-bin gnome-keyring libglib2.0-bin)
+          if ! "${apt[@]}" install -y --no-install-recommends "${packages[@]}"; then
+            echo "Installing from the image's package lists failed, so they are updated first."
+            "${apt[@]}" update
+            "${apt[@]}" install -y --no-install-recommends "${packages[@]}"
+          fi
+
+      - name: Set the screen of GitHub's Windows runner to 1920×1080
+        if: inputs.display && runner.os == 'Windows' && runner.environment == 'github-hosted'
+        timeout-minutes: 2
+        shell: pwsh
+        run: |
+          Add-Type -AssemblyName System.Windows.Forms
+          Add-Type -TypeDefinition @'
+          using System.Collections.Generic;
+          using System.Runtime.InteropServices;
+          public static class ScreenMode
+          {
+              [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+              struct DisplayMode
+              {
+                  [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string DeviceName;
+                  public short SpecVersion, DriverVersion, Size, DriverExtra;
+                  public int Fields, PositionX, PositionY, DisplayOrientation, DisplayFixedOutput;
+                  public short Color, Duplex, YResolution, TTOption, Collate;
+                  [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string FormName;
+                  public short LogPixels;
+                  public int BitsPerPel, PelsWidth, PelsHeight, DisplayFlags, DisplayFrequency;
+                  public int IcmMethod, IcmIntent, MediaType, DitherType, Reserved1, Reserved2, PanningWidth, PanningHeight;
+              }
+              [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+              static extern bool EnumDisplaySettings(string device, int index, ref DisplayMode mode);
+              [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+              static extern int ChangeDisplaySettings(ref DisplayMode mode, int flags);
+              static DisplayMode Empty()
+              {
+                  var mode = new DisplayMode();
+                  mode.Size = (short)Marshal.SizeOf(typeof(DisplayMode));
+                  return mode;
+              }
+              public static int Set(int width, int height)
+              {
+                  var mode = Empty();
+                  if (!EnumDisplaySettings(null, -1, ref mode)) return -100;
+                  mode.PelsWidth = width;
+                  mode.PelsHeight = height;
+                  mode.Fields = 0x80000 | 0x100000;
+                  return ChangeDisplaySettings(ref mode, 0);
+              }
+              public static string Modes()
+              {
+                  var sizes = new SortedSet<string>();
+                  var mode = Empty();
+                  for (var index = 0; EnumDisplaySettings(null, index, ref mode); index++) sizes.Add(mode.PelsWidth + "×" + mode.PelsHeight);
+                  return string.Join(", ", sizes);
+              }
+          }
+          '@
+          $result = [ScreenMode]::Set(1920, 1080)
+          if ($result -ne 0) {
+            $screen = [System.Windows.Forms.Screen]::PrimaryScreen
+            Write-Output "::error::The runner's screen is $($screen.Bounds.Width)×$($screen.Bounds.Height) and couldn't be set to 1920×1080: ChangeDisplaySettings returned $result. Its display's modes are $([ScreenMode]::Modes())."
+            exit 1
+          }
+          $screen = [System.Windows.Forms.Screen]::PrimaryScreen
+          if ($screen.Bounds.Width -ne 1920 -or $screen.Bounds.Height -ne 1080) {
+            Write-Output "::error::The runner's screen is $($screen.Bounds.Width)×$($screen.Bounds.Height) after it was set to 1920×1080, so a test that opens windows can't size them."
+            exit 1
+          }
+          Write-Output "The screen is $($screen.Bounds.Width)×$($screen.Bounds.Height), its work area $($screen.WorkingArea.Width)×$($screen.WorkingArea.Height)."
+
+      - name: Set the screen of GitHub's macOS runner to 1920×1080
+        if: inputs.display && runner.os == 'macOS' && runner.environment == 'github-hosted'
         timeout-minutes: 5
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends xvfb xauth dbus-daemon dbus-bin gnome-keyring libglib2.0-bin
+        run: |
+          set -euo pipefail
+          read_size() {
+            osascript -l JavaScript -e 'ObjC.import("AppKit"); const screen = $.NSScreen.mainScreen; screen.isNil() ? "0 0" : `${Math.round(screen.frame.size.width)} ${Math.round(screen.frame.size.height)}`'
+          }
+          read_checked_size() {
+            size=$(read_size)
+            read -r width height <<< "$size"
+            if ! [[ "$width" =~ ^[0-9]+$ && "$height" =~ ^[0-9]+$ ]]; then
+              echo "::error::The runner's screen size couldn't be read: NSScreen gave \"$size\"."
+              exit 1
+            fi
+          }
+          read_checked_size
+          echo "The main screen is ${width}×${height} points."
+          if [ "$width" -lt 1920 ] || [ "$height" -lt 1080 ]; then
+            cat > "$RUNNER_TEMP/screen-mode.swift" <<'SWIFT'
+          import CoreGraphics
+          import Foundation
+
+          let display = CGMainDisplayID()
+          let options = [kCGDisplayShowDuplicateLowResolutionModes: kCFBooleanTrue] as CFDictionary
+          let modes = (CGDisplayCopyAllDisplayModes(display, options) as? [CGDisplayMode]) ?? []
+          print("The display's modes: \(modes.map { "\($0.width)×\($0.height)" }.joined(separator: ", "))")
+          guard let mode = modes.first(where: { $0.width == 1920 && $0.height == 1080 }) else {
+            print("::error::The runner's display has no 1920×1080 mode, so a test that opens windows can't size them.")
+            exit(1)
+          }
+          var configuration: CGDisplayConfigRef?
+          guard CGBeginDisplayConfiguration(&configuration) == .success,
+            CGConfigureDisplayWithDisplayMode(configuration, display, mode, nil) == .success,
+            CGCompleteDisplayConfiguration(configuration, .forSession) == .success else {
+            print("::error::The runner's display couldn't be set to its 1920×1080 mode.")
+            exit(1)
+          }
+          SWIFT
+            swift "$RUNNER_TEMP/screen-mode.swift"
+            read_checked_size
+            echo "The main screen is now ${width}×${height} points."
+          fi
+          if [ "$width" -lt 1920 ] || [ "$height" -lt 1080 ]; then
+            echo "::error::The runner's screen is ${width}×${height}, smaller than 1920×1080, so a test that opens windows can't size them."
+            exit 1
+          fi
 
       - name: Run the tests
         env:
@@ -291,14 +410,137 @@ jobs:
           command=(npm run "$SCRIPT" -- ${filters[@]+"${filters[@]}"})
           keyring=false
           xvfb=
-          trap 'if [ -n "$xvfb" ]; then kill "$xvfb" 2>/dev/null || true; fi' EXIT
+          # On Linux and macOS each run starts in a process group of its own and carries a marker in its environment, which every process it starts inherits,
+          # so stopping it stops everything it started, also a browser or daemon that left the group. On Windows the run goes in a job object of its own:
+          # its launcher ends the job's other processes and waits until none is left, and Windows ends them all if the launcher itself is killed.
+          set -m
+          active=
+          if [ "$RUNNER_OS" = Windows ]; then
+            launcher="$RUNNER_TEMP/flake-proof-launcher-$JOB.ps1"
+            cat > "$launcher" <<'PS1'
+          param([string] $Bash, [string] $Script, [string] $Left, [string] $Stop, [string] $Ended)
+          $ErrorActionPreference = 'Stop'
+          Add-Type -TypeDefinition @'
+          using System;
+          using System.ComponentModel;
+          using System.Runtime.InteropServices;
+          public static class FlakeProofJob {
+            [StructLayout(LayoutKind.Sequential)] struct BasicLimits { public long PerProcessUserTimeLimit; public long PerJobUserTimeLimit; public uint LimitFlags; public UIntPtr MinimumWorkingSetSize; public UIntPtr MaximumWorkingSetSize; public uint ActiveProcessLimit; public UIntPtr Affinity; public uint PriorityClass; public uint SchedulingClass; }
+            [StructLayout(LayoutKind.Sequential)] struct IoCounters { public ulong ReadOperationCount; public ulong WriteOperationCount; public ulong OtherOperationCount; public ulong ReadTransferCount; public ulong WriteTransferCount; public ulong OtherTransferCount; }
+            [StructLayout(LayoutKind.Sequential)] struct ExtendedLimits { public BasicLimits Basic; public IoCounters Io; public UIntPtr ProcessMemoryLimit; public UIntPtr JobMemoryLimit; public UIntPtr PeakProcessMemoryUsed; public UIntPtr PeakJobMemoryUsed; }
+            [DllImport("kernel32.dll", SetLastError = true)] static extern IntPtr CreateJobObject(IntPtr attributes, IntPtr name);
+            [DllImport("kernel32.dll", SetLastError = true)] static extern bool SetInformationJobObject(IntPtr job, int infoClass, ref ExtendedLimits info, int length);
+            [DllImport("kernel32.dll", SetLastError = true)] static extern bool AssignProcessToJobObject(IntPtr job, IntPtr process);
+            [DllImport("kernel32.dll", SetLastError = true)] static extern bool QueryInformationJobObject(IntPtr job, int infoClass, IntPtr info, int length, IntPtr returned);
+            [DllImport("kernel32.dll")] static extern IntPtr GetCurrentProcess();
+            [DllImport("kernel32.dll", SetLastError = true)] static extern IntPtr OpenProcess(uint access, bool inherit, uint id);
+            [DllImport("kernel32.dll", SetLastError = true)] static extern bool IsProcessInJob(IntPtr process, IntPtr job, out bool result);
+            [DllImport("kernel32.dll", SetLastError = true)] static extern bool TerminateProcess(IntPtr process, uint exitCode);
+            [DllImport("kernel32.dll", SetLastError = true)] static extern bool CloseHandle(IntPtr handle);
+            public static IntPtr Join() {
+              IntPtr job = CreateJobObject(IntPtr.Zero, IntPtr.Zero);
+              if (job == IntPtr.Zero) throw new Win32Exception();
+              ExtendedLimits limits = new ExtendedLimits();
+              limits.Basic.LimitFlags = 0x2000;
+              if (!SetInformationJobObject(job, 9, ref limits, Marshal.SizeOf(typeof(ExtendedLimits)))) throw new Win32Exception();
+              if (!AssignProcessToJobObject(job, GetCurrentProcess())) throw new Win32Exception();
+              return job;
+            }
+            public static long[] List(IntPtr job) {
+              int size = 8 + 4096 * IntPtr.Size;
+              IntPtr buffer = Marshal.AllocHGlobal(size);
+              try {
+                if (!QueryInformationJobObject(job, 3, buffer, size, IntPtr.Zero)) throw new Win32Exception();
+                int count = Marshal.ReadInt32(buffer, 4);
+                long[] ids = new long[count];
+                for (int index = 0; index < count; index++) ids[index] = Marshal.ReadIntPtr(buffer, 8 + index * IntPtr.Size).ToInt64();
+                return ids;
+              }
+              finally { Marshal.FreeHGlobal(buffer); }
+            }
+            public static int Active(IntPtr job) {
+              IntPtr buffer = Marshal.AllocHGlobal(48);
+              try {
+                if (!QueryInformationJobObject(job, 1, buffer, 48, IntPtr.Zero)) throw new Win32Exception();
+                return Marshal.ReadInt32(buffer, 40);
+              }
+              finally { Marshal.FreeHGlobal(buffer); }
+            }
+            public static void End(IntPtr job, long id) {
+              IntPtr process = OpenProcess(0x1001, false, (uint) id);
+              if (process == IntPtr.Zero) return;
+              try {
+                bool inJob;
+                if (IsProcessInJob(process, job, out inJob) && inJob) TerminateProcess(process, 1);
+              }
+              finally { CloseHandle(process); }
+            }
+          }
+          '@
+          $job = [FlakeProofJob]::Join()
+          $start = [System.Diagnostics.ProcessStartInfo]::new($Bash)
+          $start.ArgumentList.Add($Script)
+          $start.UseShellExecute = $false
+          $run = [System.Diagnostics.Process]::Start($start)
+          while (-not $run.WaitForExit(250)) { if (Test-Path -LiteralPath $Stop) { break } }
+          $status = 1
+          if ($run.HasExited) {
+            $status = $run.ExitCode
+            Set-Content -LiteralPath $Ended -Value $status
+          }
+          $found = [System.Collections.Generic.HashSet[long]]::new()
+          $clock = [System.Diagnostics.Stopwatch]::StartNew()
+          while ([FlakeProofJob]::Active($job) -gt 1 -and $clock.Elapsed.TotalSeconds -lt 25) {
+            foreach ($id in [FlakeProofJob]::List($job) | Where-Object { $_ -ne $PID }) {
+              $process = Get-Process -Id $id -ErrorAction SilentlyContinue
+              if ($process -and $id -ne $run.Id -and $process.ProcessName -ne 'conhost') { [void] $found.Add($id) }
+              [FlakeProofJob]::End($job, $id)
+            }
+            Start-Sleep -Milliseconds 250
+          }
+          if ([FlakeProofJob]::Active($job) -gt 1) { Set-Content -LiteralPath $Left -Value "stuck $($found.Count)" }
+          else { Set-Content -LiteralPath $Left -Value $found.Count }
+          exit $status
+          PS1
+            shell_path=$(cygpath -w "$(command -v bash)")
+          fi
+          marked() {
+            if [ "$RUNNER_OS" = Linux ]; then
+              { grep -lzxF "FLAKE_PROOF_RUN=$marker" /proc/[0-9]*/environ 2>/dev/null || true; } | sed 's#^/proc/##; s#/environ$##'
+            else
+              ps -A -E -ww -o pid= -o command= | awk -v marker="$marker" '{ for (field = 2; field <= NF; field++) if ($field == "FLAKE_PROOF_RUN=" marker) { print $1; next } }'
+            fi
+          }
+          stop_run() {
+            if [ "$RUNNER_OS" = Windows ]; then
+              if [ "$1" = TERM ]; then
+                : > "$stop_file"
+              else
+                kill -KILL "$pid" 2>/dev/null || true
+              fi
+            else
+              kill "-$1" -- "-$pid" 2>/dev/null || true
+              for other in $(marked 2>/dev/null); do
+                kill "-$1" "$other" 2>/dev/null || true
+              done
+            fi
+          }
+          run_left() {
+            kill -0 -- "-$pid" 2>/dev/null && return 0
+            found=$(marked) || return 2
+            [ -n "$found" ]
+          }
+          trap 'if [ -n "$active" ]; then stop_run KILL; fi; if [ -n "$xvfb" ]; then kill "$xvfb" 2>/dev/null || true; fi' EXIT
           if [ "$VIRTUAL_DISPLAY" = true ] && [ "$RUNNER_OS" = Linux ]; then
             command -v gnome-keyring-daemon >/dev/null || { echo "::error::gnome-keyring isn't installed on this runner; display mode needs it."; exit 1; }
-            for program in Xvfb xauth dbus-run-session gdbus; do
+            for program in Xvfb xauth dbus-daemon gdbus; do
               command -v "$program" >/dev/null || { echo "::error::This runner has no $program, which display mode runs each run under."; exit 1; }
             done
             keyring=true
-            command=(dbus-run-session -- sh -c 'echo | XDG_DATA_HOME="$KEYRING/data" gnome-keyring-daemon --unlock --components=secrets --control-directory="$KEYRING/control" >/dev/null && { gdbus wait --session --timeout 30 org.freedesktop.secrets || { echo "The unlocked keyring did not take org.freedesktop.secrets on the session bus within 30 seconds."; touch "$KEYRING/no-secret-service"; exit 1; }; } && exec "$@"' sh "${command[@]}")
+            # The session bus and the keyring are the run's own children, in the foreground, and the run ends only once both have ended after its command:
+            # a keyring that forked into the background outlived the run, and dbus-run-session returns without waiting for the bus it stops.
+            # A daemon still running five seconds after TERM is killed, so a slow one can't hold the run up to its limit.
+            command=(sh -c 'stop() { kill "$keyring" "$bus" 2>/dev/null; for tick in 1 2 3 4 5 6 7 8 9 10; do ps -o stat= -p "$keyring,$bus" | grep -qv "^Z" || break; sleep 0.5; done; kill -KILL "$keyring" "$bus" 2>/dev/null; wait; }; mkfifo "$KEYRING/bus"; dbus-daemon --session --nofork --print-address=3 3> "$KEYRING/bus" & bus=$!; read -r DBUS_SESSION_BUS_ADDRESS < "$KEYRING/bus" || { echo "The session bus did not start."; touch "$KEYRING/no-session-bus"; wait; exit 1; }; export DBUS_SESSION_BUS_ADDRESS; echo | XDG_DATA_HOME="$KEYRING/data" gnome-keyring-daemon --foreground --unlock --components=secrets --control-directory="$KEYRING/control" >/dev/null & keyring=$!; gdbus wait --session --timeout 30 org.freedesktop.secrets || { echo "The unlocked keyring did not take org.freedesktop.secrets on the session bus within 30 seconds."; touch "$KEYRING/no-secret-service"; stop; exit 1; }; status=0; "$@" || status=$?; stop; exit "$status"' sh "${command[@]}")
           fi
           # Each run may take an even share of the job's time still left, keeping three minutes for the artifact, so a run that hangs is named and counted as failed
           # before the job's timeout-minutes end the job unnamed. A watchdog in this shell bounds it, on every runner, since not every runner has GNU timeout.
@@ -340,23 +582,89 @@ jobs:
             fi
             reached="$RUNNER_TEMP/flake-proof-limit-$JOB-$run"
             status=0
-            "${command[@]}" > "$log" 2>&1 &
+            marker="$JOB.$run.$$.$(date +%s)"
+            if [ "$RUNNER_OS" = Windows ]; then
+              script="$RUNNER_TEMP/flake-proof-run-$JOB.sh"
+              printf -v line '%q ' "${command[@]}"
+              printf '%s\n' "$line" > "$script"
+              left_file="$RUNNER_TEMP/flake-proof-left-$JOB-$run"
+              stop_file="$RUNNER_TEMP/flake-proof-stop-$JOB-$run"
+              ended="$RUNNER_TEMP/flake-proof-ended-$JOB-$run"
+              rm -f "$left_file" "$stop_file" "$ended"
+              FLAKE_PROOF_RUN="$marker" pwsh -NoProfile -NonInteractive -File "$launcher" -Bash "$shell_path" -Script "$(cygpath -w "$script")" -Left "$(cygpath -w "$left_file")" \
+                -Stop "$(cygpath -w "$stop_file")" -Ended "$(cygpath -w "$ended")" > "$log" 2>&1 &
+            else
+              FLAKE_PROOF_RUN="$marker" "${command[@]}" > "$log" 2>&1 &
+            fi
             pid=$!
-            # The watchdog sends TERM at the limit and KILL 30 seconds later; its own sleeps go when it is stopped, so nothing outlives the run.
+            active=$pid
+            # The watchdog stops the run at the limit, with TERM or, on Windows, the launcher's stop file, and kills it 30 seconds later; its own sleeps go when it is stopped,
+            # so nothing outlives the run. On Windows the launcher's ended file says the run's own process ended by itself, so a limit reached during its cleanup stops nothing.
             (
               trap 'kill "$nap" 2>/dev/null; exit 0' TERM
               sleep "$limit" & nap=$!
               wait "$nap"
+              [ -n "${ended:-}" ] && [ -e "$ended" ] && exit 0
               touch "$reached"
-              kill -TERM "$pid" 2>/dev/null
+              stop_run TERM
               sleep 30 & nap=$!
               wait "$nap"
-              kill -KILL "$pid" 2>/dev/null
+              stop_run KILL
             ) > /dev/null 2>&1 &
             watchdog=$!
             wait "$pid" || status=$?
             kill -TERM "$watchdog" 2>/dev/null || true
             wait "$watchdog" 2>/dev/null || true
+            # A process the run left behind, such as a server, is stopped too, and the next run starts only once none is left.
+            if [ "$run" -lt "$RUNS" ]; then
+              after="before the next run"
+            else
+              after="before the job went on"
+            fi
+            if [ "$RUNNER_OS" = Windows ]; then
+              count=$(tr -d '\r\n' < "$left_file" 2>/dev/null) || count=
+              if [[ "$count" =~ ^stuck\ [0-9]+$ ]]; then
+                echo "::error::Run $run left processes that didn't stop within 25 seconds, so they were still running $after."
+                exit 1
+              elif ! [[ "$count" =~ ^[0-9]+$ ]]; then
+                echo "::error::Couldn't tell whether run $run left processes running: its launcher, which holds the run's job object, didn't report them; its log is kept in the job's artifact."
+                exit 1
+              elif [ "$count" -gt 0 ]; then
+                echo "Run $run left processes running, which were stopped $after."
+              fi
+            else
+              left=0
+              run_left || left=$?
+              if [ "$left" = 0 ]; then
+                stop_run TERM
+                for second in $(seq 1 30); do
+                  run_left || break
+                  sleep 1
+                done
+                if run_left; then
+                  stop_run KILL
+                  sleep 5
+                fi
+                left=0
+                run_left || left=$?
+                if [ "$left" = 0 ]; then
+                  echo "::error::Run $run left processes that didn't stop within 35 seconds, so they were still running $after."
+                  exit 1
+                fi
+                if [ "$left" = 1 ]; then
+                  echo "Run $run left processes running, which were stopped $after."
+                fi
+              fi
+              if [ "$left" = 2 ]; then
+                echo "::error::Couldn't tell whether run $run left processes running: ps failed."
+                exit 1
+              fi
+            fi
+            active=
+            if [ "$keyring" = true ] && [ -e "$KEYRING/no-session-bus" ]; then
+              echo "::error::The session bus didn't start for run $run, so the run's test never started; its log is kept in the job's artifact."
+              exit 1
+            fi
             if [ "$keyring" = true ] && [ -e "$KEYRING/no-secret-service" ]; then
               # The runner's keyring, not the test, failed: that is no flake, so the job ends here, as when Xvfb doesn't start.
               echo "::error::The unlocked keyring did not take org.freedesktop.secrets on the session bus within 30 seconds for run $run, so the run's test never started; its log is kept in the job's artifact."
@@ -381,8 +689,9 @@ jobs:
             fi
             for folder in ${reports[@]+"${reports[@]}"}; do
               if [ -e "$folder" ]; then
-                mkdir -p "_build/flake-proof/run-$run/$(dirname "$folder")"
-                mv "$folder" "_build/flake-proof/run-$run/$folder"
+                if ! { mkdir -p "_build/flake-proof/run-$run/$(dirname "$folder")" && mv "$folder" "_build/flake-proof/run-$run/$folder"; }; then
+                  echo "::warning::Run $run's $folder couldn't move into the artifact, so the artifact lacks it."
+                fi
               fi
             done
           done
@@ -398,7 +707,8 @@ jobs:
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: flake-proof-${{ matrix.target }}-${{ matrix.job }}
+          name: flake-proof-${{ matrix.target }}-${{ matrix.job }}-${{ github.run_attempt }}
           path: _build/flake-proof/
+          include-hidden-files: true
           retention-days: ${{ needs.versions.outputs.retention-days }}
           if-no-files-found: ignore

@@ -16,8 +16,9 @@ Apply DRY to duplicated knowledge and behavior, not merely similar code; it does
 Place behavior with its owner:
 
 1. The host (language, framework or platform) provides it: use that form.
-2. One package needs it: use a method of its owning concept.
-3. Several packages need it: place it in the lowest package that owns the concept, preserving dependency direction.
+2. It is a general capability, not the product's own behavior: use CONTEXT's, or add it to CONTEXT as a package ([the base framework](AGENTS.md#the-base-framework)).
+3. One package needs it: use a method of its owning concept.
+4. Several packages need it: place it in the lowest package that owns the concept, preserving dependency direction.
 
 When work shows that behavior belongs to another owner, move it there before going on; a local copy "for now" is how buckets and duplicate types begin.
 
@@ -42,6 +43,9 @@ Production behavior belongs to classes representing named concepts.
   Structured results use named classes; polymorphic results use meaningful base or abstract classes.
   Interfaces describe consumed or implemented contracts, not results.
   Do not return interfaces, shape aliases, anonymous objects, tuples or property bags, except at the wire boundary.
+- Structured values are named classes everywhere, not only in results: a field, local, parameter or type argument never takes an anonymous object type, such as `{ value: T }`, or a tuple, except at the wire boundary.
+  A value that may be missing uses the language's own absent value or a named sentinel, never a wrapper object.
+  Existing code moves to named classes when a file is touched.
 - Keep public APIs small and intentional; internal mechanics stay private.
 - Prefer immutable data when mutation is not part of the concept.
 

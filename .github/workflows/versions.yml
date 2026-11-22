@@ -207,16 +207,16 @@ jobs:
           if [ -z "$scope" ] && [ "$registry" = "$PRIVATE_REGISTRY_URL" ]; then
             scope="$PRIVATE_SCOPE"
           fi
-          if [ -n "$registry" ] && ! [[ "$registry" =~ ^https://[a-z0-9.-]+(/[A-Za-z0-9._~-]+)*/?$ ]]; then
-            echo "::error::The registry \"$registry\" is not an https address, such as https://npm.pkg.github.com."
+          if [ -n "$registry" ] && ! [[ "$registry" =~ ^https://[a-z0-9.-]+(/[A-Za-z0-9._~-]+)*$ ]]; then
+            echo "::error::The registry \"$registry\" is not an https address without a trailing slash, such as https://npm.pkg.github.com."
             exit 1
           fi
           if [ -n "$scope" ] && ! [[ "$scope" =~ ^@[a-z0-9][a-z0-9._-]*$ ]]; then
             echo "::error::The scope \"$scope\" is not a scope, such as @noldova-com."
             exit 1
           fi
-          if ! [[ "$PUBLISH_REGISTRY" =~ ^https://[a-z0-9.-]+(/[A-Za-z0-9._~-]+)*/?$ ]]; then
-            echo "::error::The publish registry \"$PUBLISH_REGISTRY\" is not an https address, such as https://registry.npmjs.org."
+          if ! [[ "$PUBLISH_REGISTRY" =~ ^https://[a-z0-9.-]+(/[A-Za-z0-9._~-]+)*$ ]]; then
+            echo "::error::The publish registry \"$PUBLISH_REGISTRY\" is not an https address without a trailing slash, such as https://registry.npmjs.org."
             exit 1
           fi
           if ! [[ "$PUBLISH_SCOPE" =~ ^@[a-z0-9][a-z0-9._-]*$ ]]; then
