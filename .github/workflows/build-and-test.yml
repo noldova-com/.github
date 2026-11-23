@@ -477,7 +477,7 @@ jobs:
           else
             echo "$TEMP could not be listed: $entries"
           fi
-          probe="$folder/write-probe-$"
+          probe="$folder/write-probe-$$"
           if error=$( { printf 'probe' > "$probe"; } 2>&1 ); then
             if error=$(rm -- "$probe" 2>&1); then
               echo "A new file in $TEMP can be written and removed."
