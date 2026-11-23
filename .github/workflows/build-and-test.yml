@@ -397,30 +397,6 @@ jobs:
           SHARD: ${{ matrix.parts > 1 && format('--shard={0}/{1}', matrix.part, matrix.parts) || '' }}
         run: npm run test -- --skip-test-details --skip-coverage-details $SHARD
 
-      - name: Report the temporary folder's drive after a failure
-        if: failure() && runner.os == 'Windows' && runner.environment == 'github-hosted'
-        timeout-minutes: 2
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Continue'
-          $folder = $env:TEMP
-          $letter = (Split-Path -Qualifier $folder).TrimEnd(':')
-          Get-Volume -DriveLetter $letter | Format-List DriveLetter, FileSystem, HealthStatus, OperationalStatus, Size, SizeRemaining
-          Get-Item -LiteralPath $folder -Force | Format-List FullName, Attributes, LastWriteTimeUtc
-          "Entries in ${folder}: $((Get-ChildItem -LiteralPath $folder -Force -ErrorAction Continue | Measure-Object).Count)"
-          $probe = Join-Path $folder "write-probe-$PID"
-          try {
-            [IO.File]::WriteAllText($probe, 'probe')
-            Remove-Item -LiteralPath $probe
-            "A new file in $folder can be written and removed."
-          } catch {
-            $failure = $_.Exception.GetBaseException()
-            "Writing a new file in $folder failed: $($failure.GetType().FullName), HResult $('0x{0:X8}' -f $failure.HResult): $($failure.Message)"
-          }
-          Get-CimInstance Win32_OperatingSystem | Format-List FreePhysicalMemory, TotalVisibleMemorySize, FreeVirtualMemory, TotalVirtualMemorySize
-          Get-WinEvent -FilterHashtable @{ LogName = 'System'; Level = 1, 2, 3; StartTime = (Get-Date).AddHours(-2) } -MaxEvents 40 -ErrorAction SilentlyContinue |
-            Format-Table -Wrap TimeCreated, ProviderName, Id, Message
-
       - name: Keep the part's outputs
         id: keep-part
         if: inputs.shard-outputs != '' && matrix.parts > 1
@@ -486,6 +462,55 @@ jobs:
         env:
           RELEASE_SCOPE: ${{ needs.versions.outputs.publish-scope }}
         run: pipelines archive _packages "$(node -p 'require("./version.json").version')" "$(git rev-parse HEAD)" "$RELEASE_SCOPE"
+
+      - name: Report the temporary folder's drive after a failure
+        if: failure() && runner.os == 'Windows' && runner.environment == 'github-hosted'
+        timeout-minutes: 2
+        env:
+          MSYS_NO_PATHCONV: '1'
+        run: |
+          set -uo pipefail
+          folder=$(cygpath -u "$TEMP")
+          df -h "$folder" || echo "The free space of $TEMP could not be read."
+          if entries=$(ls -A "$folder" 2>&1); then
+            echo "Entries in $TEMP: $(printf '%s' "$entries" | grep -c '^')"
+          else
+            echo "$TEMP could not be listed: $entries"
+          fi
+          probe="$folder/write-probe-$"
+          if error=$( { printf 'probe' > "$probe"; } 2>&1 ); then
+            if error=$(rm -- "$probe" 2>&1); then
+              echo "A new file in $TEMP can be written and removed."
+            else
+              echo "A new file in $TEMP was written but could not be removed: $error"
+            fi
+          else
+            echo "A new file in $TEMP could not be written: $error"
+          fi
+          grep -E '^(MemTotal|MemFree|SwapTotal|SwapFree):' /proc/meminfo || echo "The memory could not be read."
+          echo "The System log's 100 newest errors and warnings of the last two hours, newest first:"
+          wevtutil qe System '/q:*[System[(Level=1 or Level=2 or Level=3) and TimeCreated[timediff(@SystemTime) <= 7200000]]]' /c:100 /rd:true /f:text ||
+            echo "The System log could not be read."
+
+      - name: Report the temporary folder's volume and a write's Windows error after a failure
+        if: failure() && runner.os == 'Windows' && runner.environment == 'github-hosted'
+        timeout-minutes: 1
+        shell: pwsh
+        run: |
+          try {
+            Get-Volume -FilePath $env:TEMP -ErrorAction Stop | Format-List DriveLetter, FileSystem, HealthStatus, OperationalStatus
+          } catch {
+            "The volume of $env:TEMP could not be read: $($_.Exception.Message)"
+          }
+          $probe = Join-Path $env:TEMP "write-probe-$PID"
+          try {
+            [IO.File]::WriteAllText($probe, 'probe')
+            [IO.File]::Delete($probe)
+            "A new file in $env:TEMP can be written and removed."
+          } catch {
+            $failure = $_.Exception.GetBaseException()
+            "A new file in $env:TEMP could not be written or removed: $($failure.GetType().FullName), HResult $('0x{0:X8}' -f $failure.HResult): $($failure.Message)"
+          }
 
   separate-test:
     name: Separate test
