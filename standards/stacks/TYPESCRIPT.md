@@ -44,6 +44,7 @@ public override readonly name: string = "ArgumentException";
   A public static field that builds itself from its own class stays after the statics it needs, because static fields initialize in declaration order.
   Fields of one group have no blank line between them; one blank line separates groups and every other member.
   Enum members have no blank lines between them.
+  Declarations without a body (an interface's members, an abstract class's abstract members) have no blank line between them; one blank line separates logical groups, such as properties from methods.
 
 ## Canonical values
 
