@@ -170,6 +170,9 @@ tests/services/snapshot-tracker.test.ts
 - The company uses one Node version everywhere: every repository's `engines`, every workflow's `node-version`, every test machine and every member's machine.
   Only a maintainer changes it, and then every repository moves together.
 - npm is the only package manager.
+- A repository builds, tests and times its tests the way [CONTEXT](../AGENTS.md#the-base-framework)'s scripts do (`scripts/build.ts`, `scripts/test.ts` and `scripts/test-timing.ts`, run as `npm run build`, `npm test` and `npm run test:timing`).
+  It leaves out what it doesn't need and adds no other way.
+- A repository uses CONTEXT's TypeScript version; one with Angular packages uses the newest version its Angular release supports.
 - Standalone automation is TypeScript; npm commands expose TypeScript entry points with arguments, not inline shell.
   Node runs the entry points directly, with no TypeScript runner while it can.
 - Scripts have no coverage requirement and no mirrored test files; the packages they build are tested, and a script gets a test of its own only for an outcome no run shows, as [TESTING.md](../TESTING.md#coverage) says.
