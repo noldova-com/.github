@@ -21,8 +21,12 @@ on:
         description: The image's name under the organization on ghcr.io, such as <repository>-docs
         required: true
         type: string
+      ref:
+        description: The full hash of the calling repository's commit to build, such as the commit a release names; empty builds the commit the run is on
+        type: string
+        default: ''
       tag:
-        description: The tag the image is pushed under; empty takes the commit's full hash
+        description: The tag the image is pushed under; empty takes the built commit's full hash
         type: string
         default: ''
       nginx:
@@ -51,7 +55,8 @@ env:
   npm_config_ignore_scripts: 'true'
   DOCS_OUTPUT: ${{ inputs.output }}
   DOCS_IMAGE: ${{ inputs.image }}
-  DOCS_TAG: ${{ inputs.tag || github.sha }}
+  DOCS_REF: ${{ inputs.ref }}
+  DOCS_TAG: ${{ inputs.tag || inputs.ref || github.sha }}
   DOCS_NGINX: ${{ inputs.nginx }}
   DOCS_ENV: ${{ inputs.env }}
 
@@ -84,6 +89,10 @@ jobs:
             echo "::error::image must be a lowercase name such as <repository>-docs, not \"$DOCS_IMAGE\"."
             exit 1
           fi
+          if [ -n "$DOCS_REF" ] && [[ ! "$DOCS_REF" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::ref must be a commit's full hash, 40 lowercase hexadecimal digits, not \"$DOCS_REF\"."
+            exit 1
+          fi
           if [[ ! "$DOCS_TAG" =~ ^[A-Za-z0-9_][A-Za-z0-9._-]{0,127}$ ]]; then
             echo "::error::tag must be an image tag of up to 128 letters, digits, '.', '_' and '-', not \"$DOCS_TAG\"."
             exit 1
@@ -112,6 +121,7 @@ jobs:
       - name: Check out the revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ inputs.ref }}
           persist-credentials: false
 
       - name: Set up Node.js for the organization's packages
