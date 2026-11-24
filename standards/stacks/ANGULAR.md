@@ -39,6 +39,8 @@ It adds to [CODE.md](../CODE.md), [TESTING.md](../TESTING.md), [UI.md](../UI.md)
 - Specs use `.spec.ts` in place of TypeScript's `.test.ts`, mirroring paths relative to `src` beneath a sibling `tests`: `src/app/services/layout-store.service.ts` maps to `tests/app/services/layout-store.service.spec.ts`.
 - A stylesheet whose behavior its package owns may have a spec that mirrors it the same way, replacing `.css` with `.spec.ts`.
 - Shared fixtures use `tests/fixtures`; environment configuration lives directly under `tests`.
+- Vitest runs only specs that need Angular's test bed or the DOM, such as components, directives and the services that need them.
+  An Angular package's other code is tested with `@noldova/context.testing`, as [TYPESCRIPT.md](TYPESCRIPT.md) says.
 - Specs run through Angular's supported testing surface, with framework error propagation and DOM-state isolation.
   When they run in a real browser (Vitest in headless Chromium through Playwright), styles, layout and computed values are real.
 - Install a throwing `ErrorHandler` through the unit-test builder's provider configuration.
