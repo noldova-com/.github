@@ -30,7 +30,7 @@ on:
         type: string
         default: ''
       nginx:
-        description: A folder in the repository laid out as /etc/nginx/, such as deploy/nginx, whose files go there in place of the shared nginx.conf and headers.conf; it must hold nginx.conf; empty keeps the shared ones
+        description: A folder in the repository laid out as /etc/nginx/, such as deploy/nginx, whose files go there in place of the shared nginx.conf and headers.conf; it must hold nginx.conf, which turns access_log off in its http block and nowhere on, and sets error_log at its top level, and anywhere else, to emerg; empty keeps the shared ones
         type: string
         default: ''
       env:
@@ -285,6 +285,106 @@ jobs:
             --owner=0 --group=0 --numeric-owner --mode='u=rwX,go=rX' --mtime="@$SOURCE_DATE_EPOCH" \
             usr/share/nginx/html --no-recursion "${settings[@]}"
           echo "The layer is $(du -h "$RUNNER_TEMP/docs-layer.tar" | cut -f1)."
+
+      - name: Check the nginx log settings
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/check-logs.awk" <<'AWK'
+            function finish() {
+              if (inword) {
+                n++
+                words[n] = word
+                if (n == 1)
+                  start = FNR
+              }
+              word = ""
+              inword = 0
+            }
+            function complain(line, text) {
+              printf "::error::%s:%d: %s\n", FILENAME, line, text
+              bad = 1
+            }
+            function statement() {
+              if (words[1] == "access_log") {
+                if (n != 2 || words[2] != "off")
+                  complain(start, "access_log may only be off, so the image keeps no request log.")
+                else if (FILENAME == "etc/nginx/nginx.conf" && depth == 1 && stack[1] == "http")
+                  accessOff = 1
+              }
+              if (words[1] == "error_log") {
+                if (n < 3 || words[n] != "emerg")
+                  complain(start, "error_log must name the emerg level, so the image logs only what stops nginx.")
+                else if (FILENAME == "etc/nginx/nginx.conf" && depth == 0)
+                  errorEmerg = 1
+              }
+              n = 0
+            }
+            FNR == 1 {
+              depth = 0
+              n = 0
+              word = ""
+              inword = 0
+              quote = ""
+            }
+            {
+              for (i = 1; i <= length($0); i++) {
+                c = substr($0, i, 1)
+                if (quote != "") {
+                  if (c == "\\") {
+                    word = word substr($0, i + 1, 1)
+                    i++
+                  } else if (c == quote) {
+                    quote = ""
+                  } else {
+                    word = word c
+                  }
+                  continue
+                }
+                if (c == "#")
+                  break
+                if (c == "\"" || c == sq) {
+                  quote = c
+                  inword = 1
+                } else if (c == " " || c == "\t" || c == "\r") {
+                  finish()
+                } else if (c == ";") {
+                  finish()
+                  statement()
+                } else if (c == "{") {
+                  finish()
+                  depth++
+                  stack[depth] = n > 0 ? words[1] : ""
+                  n = 0
+                } else if (c == "}") {
+                  finish()
+                  depth--
+                  n = 0
+                } else {
+                  word = word c
+                  inword = 1
+                }
+              }
+              if (quote != "")
+                word = word "\n"
+              else
+                finish()
+            }
+            END {
+              if (!accessOff) {
+                print "::error::etc/nginx/nginx.conf must turn the request log off in its http block, with access_log off;."
+                bad = 1
+              }
+              if (!errorEmerg) {
+                print "::error::etc/nginx/nginx.conf must set error_log at its top level to the emerg level, as in error_log /dev/stderr emerg;."
+                bad = 1
+              }
+              exit bad
+            }
+          AWK
+          cd "$RUNNER_TEMP/docs-layer"
+          mapfile -d '' -t files < <(find etc/nginx -type f -print0 | LC_ALL=C sort -z)
+          awk -v sq="'" -f "$RUNNER_TEMP/check-logs.awk" "${files[@]}"
+          echo "The nginx settings keep no request log and log only errors at the emerg level."
 
       - name: Push the image
         id: push
