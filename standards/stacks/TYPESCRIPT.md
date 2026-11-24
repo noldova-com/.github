@@ -153,6 +153,8 @@ public constructor(
 
 ## Tests
 
+- Code with no UI is tested with `@noldova/context.testing`: libraries, back ends, protocols, scripts, and an Angular package's services, models and other code that needs neither Angular's test bed nor the DOM.
+  Specs that need them follow [ANGULAR.md](ANGULAR.md#specs).
 - Tests mirror source paths under `tests/`, replacing `.ts` with `.test.ts` and keeping role suffixes:
 
 ```text
