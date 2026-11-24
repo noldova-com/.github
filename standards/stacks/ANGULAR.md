@@ -36,11 +36,10 @@ It adds to [CODE.md](../CODE.md), [TESTING.md](../TESTING.md), [UI.md](../UI.md)
 
 ## Specs
 
-- Specs use `.spec.ts` in place of TypeScript's `.test.ts`, mirroring paths relative to `src` beneath a sibling `tests`: `src/app/services/layout-store.service.ts` maps to `tests/app/services/layout-store.service.spec.ts`.
+- Specs that need Angular's test bed or the DOM, such as those of components, directives and the services that need them, run in Vitest and use `.spec.ts` in place of TypeScript's `.test.ts`, mirroring paths relative to `src` beneath a sibling `tests`: `src/app/components/side-bar.component.ts` maps to `tests/app/components/side-bar.component.spec.ts`.
+- An Angular package's other code is tested with `@noldova/context.testing` in `.test.ts` files, as [TYPESCRIPT.md](TYPESCRIPT.md#tests) says, and the rest of this section is about the specs.
 - A stylesheet whose behavior its package owns may have a spec that mirrors it the same way, replacing `.css` with `.spec.ts`.
 - Shared fixtures use `tests/fixtures`; environment configuration lives directly under `tests`.
-- Vitest runs only specs that need Angular's test bed or the DOM, such as components, directives and the services that need them.
-  An Angular package's other code is tested with `@noldova/context.testing`, as [TYPESCRIPT.md](TYPESCRIPT.md) says.
 - Specs run through Angular's supported testing surface, with framework error propagation and DOM-state isolation.
   When they run in a real browser (Vitest in headless Chromium through Playwright), styles, layout and computed values are real.
 - Install a throwing `ErrorHandler` through the unit-test builder's provider configuration.
@@ -52,7 +51,8 @@ It adds to [CODE.md](../CODE.md), [TESTING.md](../TESTING.md), [UI.md](../UI.md)
 
 - The run expects a result for every file its test target's include patterns match, and refuses a test target that excludes files, since it does not apply exclusions.
 - Before preparing the project and before each run, remove the test runner's pre-bundled dependencies under `node_modules/.vite`: they are keyed by the lockfile alone, so they would otherwise keep an earlier build of the project's own packages.
-- Coverage is Vitest's V8 coverage through the Angular unit-test builder, whose threshold fails the gate like the other coverage gates.
+- The specs' coverage is Vitest's V8 coverage through the Angular unit-test builder, and the package's `.test.ts` coverage is context.testing's.
+  Each run fails its own gate, and every executable file is measured by exactly one of the two.
 - Enum files hold no executable code after the build, which inlines their members, and are left out of the measurement.
 - The compiler emits, after each class, a development-mode call that records the class's decorator metadata (`ɵsetClassMetadata`); it never runs in production.
   Mark exactly that call for the coverage to skip, and report how many were skipped.
