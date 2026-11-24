@@ -73,14 +73,6 @@ on:
         description: Overrides the npm version versions.yml names, such as 11.20.0
         type: string
         default: ''
-      install-registry-url:
-        description: Overrides the registry versions.yml names for the scope's packages, such as https://npm.pkg.github.com
-        type: string
-        default: ''
-      install-scope:
-        description: Overrides the scope versions.yml names for that registry, such as @noldova-com
-        type: string
-        default: ''
       runs-on-linux-x64:
         description: Overrides the Linux x64 runner, as the JSON runs-on takes
         type: string
@@ -125,8 +117,6 @@ jobs:
       targets: ${{ inputs.targets }}
       node-version: ${{ inputs.node-version }}
       npm-version: ${{ inputs.npm-version }}
-      install-registry-url: ${{ inputs.install-registry-url }}
-      install-scope: ${{ inputs.install-scope }}
       runs-on-linux-x64: ${{ inputs.runs-on-linux-x64 }}
       runs-on-linux-arm64: ${{ inputs.runs-on-linux-arm64 }}
       runs-on-windows-x64: ${{ inputs.runs-on-windows-x64 }}
@@ -269,7 +259,6 @@ jobs:
     timeout-minutes: ${{ inputs.timeout-minutes }}
     permissions:
       contents: read
-      packages: read
     strategy:
       fail-fast: false
       matrix:
@@ -285,8 +274,6 @@ jobs:
         with:
           node-version: ${{ needs.versions.outputs.node-version }}
           package-manager-cache: false
-          registry-url: ${{ needs.versions.outputs.install-registry-url }}
-          scope: ${{ needs.versions.outputs.install-scope }}
 
       - name: Move npm's temporary files and cache off the system disk
         if: runner.os == 'Windows' && runner.environment == 'github-hosted'
@@ -347,7 +334,6 @@ jobs:
 
       - name: Build the packages
         env:
-          NODE_AUTH_TOKEN: ${{ needs.versions.outputs.install-registry-url == 'https://npm.pkg.github.com' && github.token || '' }}
           SHARD: ${{ matrix.parts > 1 && format('--shard={0}/{1}', matrix.part, matrix.parts) || '' }}
         run: npm run build
 
@@ -451,7 +437,6 @@ jobs:
       - name: Check that a second build packs the same archives
         if: inputs.publishes && matrix.target == 'linux-x64' && (!matrix.part || matrix.part == 1)
         env:
-          NODE_AUTH_TOKEN: ${{ needs.versions.outputs.install-registry-url == 'https://npm.pkg.github.com' && github.token || '' }}
           GIT_CONFIG_COUNT: '1'
           GIT_CONFIG_KEY_0: core.longpaths
           GIT_CONFIG_VALUE_0: 'true'
@@ -471,7 +456,6 @@ jobs:
     timeout-minutes: ${{ inputs.timeout-minutes }}
     permissions:
       contents: read
-      packages: read
     steps:
       - name: Check out the revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -483,16 +467,12 @@ jobs:
         with:
           node-version: ${{ needs.versions.outputs.node-version }}
           package-manager-cache: false
-          registry-url: ${{ needs.versions.outputs.install-registry-url }}
-          scope: ${{ needs.versions.outputs.install-scope }}
 
       - *browser-folder
 
       - *browser-cache
 
       - name: Build the packages
-        env:
-          NODE_AUTH_TOKEN: ${{ needs.versions.outputs.install-registry-url == 'https://npm.pkg.github.com' && github.token || '' }}
         run: npm run build
 
       - name: Install the pipelines tool
@@ -559,7 +539,6 @@ jobs:
     timeout-minutes: ${{ inputs.timeout-minutes }}
     permissions:
       contents: read
-      packages: read
     strategy:
       fail-fast: false
       matrix:
@@ -578,16 +557,12 @@ jobs:
         with:
           node-version: ${{ needs.versions.outputs.node-version }}
           package-manager-cache: false
-          registry-url: ${{ needs.versions.outputs.install-registry-url }}
-          scope: ${{ needs.versions.outputs.install-scope }}
 
       - *browser-folder
 
       - *browser-cache
 
       - name: Build the packages
-        env:
-          NODE_AUTH_TOKEN: ${{ needs.versions.outputs.install-registry-url == 'https://npm.pkg.github.com' && github.token || '' }}
         run: npm run build
 
       - name: Install the pipelines tool
@@ -614,7 +589,6 @@ jobs:
       - name: Prepare the end-to-end test
         if: inputs.end-to-end-prepare != ''
         env:
-          NODE_AUTH_TOKEN: ${{ needs.versions.outputs.install-registry-url == 'https://npm.pkg.github.com' && github.token || '' }}
           PREPARE: ${{ inputs.end-to-end-prepare }}
         run: bash -euo pipefail -c "$PREPARE"
 

@@ -29,14 +29,6 @@ on:
         description: Overrides the npm version versions.yml names, such as 11.20.0
         type: string
         default: ''
-      install-registry-url:
-        description: Overrides the registry versions.yml names for installing the scope's packages, such as https://npm.pkg.github.com
-        type: string
-        default: ''
-      install-scope:
-        description: Overrides the scope versions.yml names for that registry, such as @noldova-com
-        type: string
-        default: ''
       runs-on-linux-x64:
         description: Overrides the Linux x64 runner, as the JSON runs-on takes
         type: string
@@ -63,8 +55,6 @@ jobs:
       targets: linux-x64
       node-version: ${{ inputs.node-version }}
       npm-version: ${{ inputs.npm-version }}
-      install-registry-url: ${{ inputs.install-registry-url }}
-      install-scope: ${{ inputs.install-scope }}
       runs-on-linux-x64: ${{ inputs.runs-on-linux-x64 }}
 
   update:
@@ -78,7 +68,6 @@ jobs:
       cancel-in-progress: false
     permissions:
       contents: read
-      packages: read
     steps:
       - name: Check out the commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -91,8 +80,6 @@ jobs:
         with:
           node-version: ${{ needs.versions.outputs.node-version }}
           package-manager-cache: false
-          registry-url: ${{ needs.versions.outputs.install-registry-url }}
-          scope: ${{ needs.versions.outputs.install-scope }}
 
       - name: Install the pipelines tool
         env:
@@ -143,7 +130,6 @@ jobs:
       - name: Propose the version
         env:
           GITHUB_TOKEN: ${{ steps.token.outputs.token }}
-          NODE_AUTH_TOKEN: ${{ needs.versions.outputs.install-registry-url == 'https://npm.pkg.github.com' && github.token || '' }}
           GIT_AUTHOR_NAME: ${{ steps.bot.outputs.name }}
           GIT_AUTHOR_EMAIL: ${{ steps.bot.outputs.email }}
           GIT_COMMITTER_NAME: ${{ steps.bot.outputs.name }}
