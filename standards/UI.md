@@ -31,7 +31,7 @@ Reference applications do not automatically change a project's rules.
 - A theme is data: colors per mode and the values of geometry tokens.
   It contains no styles, selectors or code.
   Fonts and text sizes stay the person's choice, and layout, interaction and accessibility rules hold in every theme and mode.
-- The person chooses the mode as System, Light or Dark, offered in that order, with System the default.
+- The person chooses the mode as Light, Dark or System, offered in that order, with System the default.
 - Use one interaction accent per theme; errors and additions or removals have their own semantic colors.
 - A nested preview that paints a theme resolves its derived colors within its own scope.
 
