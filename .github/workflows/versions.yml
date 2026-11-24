@@ -21,14 +21,6 @@ on:
         description: The npm version that comes with that Node, such as 11.20.0; empty takes the default below, or checks none when node-version is given
         type: string
         default: ''
-      install-registry-url:
-        description: The registry the install reads the scope's packages from, such as https://npm.pkg.github.com; empty takes the default below
-        type: string
-        default: ''
-      install-scope:
-        description: The scope whose packages come from that registry, such as @noldova-com; empty takes the default below
-        type: string
-        default: ''
       publish-registry-url:
         description: The registry a release publishes to, such as https://registry.npmjs.org; empty takes the default below
         type: string
@@ -76,12 +68,6 @@ on:
       npm-version:
         description: The npm version every job checks; empty when none is checked
         value: ${{ jobs.versions.outputs.npm-version }}
-      install-registry-url:
-        description: The registry the install reads the scope's packages from; empty when every package comes from npm's registry
-        value: ${{ jobs.versions.outputs.install-registry-url }}
-      install-scope:
-        description: The scope whose packages come from that registry; empty with it
-        value: ${{ jobs.versions.outputs.install-scope }}
       publish-registry-url:
         description: The registry a release publishes to
         value: ${{ jobs.versions.outputs.publish-registry-url }}
@@ -125,11 +111,8 @@ defaults:
 env:
   NODE_VERSION: '26.13.1'
   NPM_VERSION: '11.20.0'
-  PRIVATE_REGISTRY_URL: https://npm.pkg.github.com
-  PRIVATE_SCOPE: '@noldova-com'
   PUBLIC_REGISTRY_URL: https://registry.npmjs.org
   PUBLIC_SCOPE: '@noldova'
-  PRIVATE_ACCESS: restricted
   PUBLIC_ACCESS: public
   PRIVATE_RETENTION_DAYS: '1'
   PUBLIC_RETENTION_DAYS: '7'
@@ -149,8 +132,6 @@ jobs:
     outputs:
       node-version: ${{ steps.versions.outputs.node-version }}
       npm-version: ${{ steps.versions.outputs.npm-version }}
-      install-registry-url: ${{ steps.versions.outputs.install-registry-url }}
-      install-scope: ${{ steps.versions.outputs.install-scope }}
       publish-registry-url: ${{ steps.versions.outputs.publish-registry-url }}
       publish-scope: ${{ steps.versions.outputs.publish-scope }}
       publish-access: ${{ steps.versions.outputs.publish-access }}
@@ -171,11 +152,9 @@ jobs:
           TARGETS: ${{ inputs.targets }}
           NODE: ${{ inputs.node-version || env.NODE_VERSION }}
           NPM: ${{ inputs.npm-version || (inputs.node-version == '' && env.NPM_VERSION || '') }}
-          REGISTRY_INPUT: ${{ inputs.install-registry-url }}
-          SCOPE_INPUT: ${{ inputs.install-scope }}
-          PUBLISH_REGISTRY: ${{ inputs.publish-registry-url || (github.event.repository.private && env.PRIVATE_REGISTRY_URL || env.PUBLIC_REGISTRY_URL) }}
-          PUBLISH_SCOPE: ${{ inputs.publish-scope || (github.event.repository.private && env.PRIVATE_SCOPE || env.PUBLIC_SCOPE) }}
-          PUBLISH_ACCESS: ${{ inputs.publish-access || (github.event.repository.private && env.PRIVATE_ACCESS || env.PUBLIC_ACCESS) }}
+          PUBLISH_REGISTRY: ${{ inputs.publish-registry-url || env.PUBLIC_REGISTRY_URL }}
+          PUBLISH_SCOPE: ${{ inputs.publish-scope || env.PUBLIC_SCOPE }}
+          PUBLISH_ACCESS: ${{ inputs.publish-access || env.PUBLIC_ACCESS }}
           RETENTION: ${{ inputs.retention-days || (github.event.repository.private && env.PRIVATE_RETENTION_DAYS || env.PUBLIC_RETENTION_DAYS) }}
           OVERRIDE_LINUX_X64: ${{ inputs.runs-on-linux-x64 }}
           OVERRIDE_LINUX_ARM64: ${{ inputs.runs-on-linux-arm64 }}
@@ -199,22 +178,6 @@ jobs:
             echo "::error::The npm version \"$NPM\" is not an exact version, such as 11.20.0."
             exit 1
           fi
-          registry="$REGISTRY_INPUT"
-          scope="$SCOPE_INPUT"
-          if [ -z "$registry" ] && [ "$IS_PRIVATE" = "true" ]; then
-            registry="$PRIVATE_REGISTRY_URL"
-          fi
-          if [ -z "$scope" ] && [ "$registry" = "$PRIVATE_REGISTRY_URL" ]; then
-            scope="$PRIVATE_SCOPE"
-          fi
-          if [ -n "$registry" ] && ! [[ "$registry" =~ ^https://[a-z0-9.-]+(/[A-Za-z0-9._~-]+)*$ ]]; then
-            echo "::error::The registry \"$registry\" is not an https address without a trailing slash, such as https://npm.pkg.github.com."
-            exit 1
-          fi
-          if [ -n "$scope" ] && ! [[ "$scope" =~ ^@[a-z0-9][a-z0-9._-]*$ ]]; then
-            echo "::error::The scope \"$scope\" is not a scope, such as @noldova-com."
-            exit 1
-          fi
           if ! [[ "$PUBLISH_REGISTRY" =~ ^https://[a-z0-9.-]+(/[A-Za-z0-9._~-]+)*$ ]]; then
             echo "::error::The publish registry \"$PUBLISH_REGISTRY\" is not an https address without a trailing slash, such as https://registry.npmjs.org."
             exit 1
@@ -227,24 +190,18 @@ jobs:
             echo "::error::The publish access \"$PUBLISH_ACCESS\" must be public or restricted."
             exit 1
           fi
-          if { [ -n "$registry" ] && [ -z "$scope" ]; } || { [ -z "$registry" ] && [ -n "$scope" ]; }; then
-            echo "::error::install-registry-url and install-scope go together: a registry with no scope would serve every package, and a scope with no registry means nothing."
-            exit 1
-          fi
           if ! [[ "$RETENTION" =~ ^[0-9]+$ ]] || [ "$RETENTION" -lt 1 ] || [ "$RETENTION" -gt 90 ]; then
             echo "::error::retention-days must be a whole number from 1 to 90."
             exit 1
           fi
           printf 'node-version=%s\n' "$NODE" >> "$GITHUB_OUTPUT"
           printf 'npm-version=%s\n' "$NPM" >> "$GITHUB_OUTPUT"
-          printf 'install-registry-url=%s\n' "$registry" >> "$GITHUB_OUTPUT"
-          printf 'install-scope=%s\n' "$scope" >> "$GITHUB_OUTPUT"
           printf 'publish-registry-url=%s\n' "$PUBLISH_REGISTRY" >> "$GITHUB_OUTPUT"
           printf 'publish-scope=%s\n' "$PUBLISH_SCOPE" >> "$GITHUB_OUTPUT"
           printf 'publish-access=%s\n' "$PUBLISH_ACCESS" >> "$GITHUB_OUTPUT"
           printf 'retention-days=%s\n' "$RETENTION" >> "$GITHUB_OUTPUT"
           echo "Node: $NODE; npm: ${NPM:-not checked}"
-          echo "Install registry: ${registry:-none besides npm}${scope:+ for $scope}; publishes to $PUBLISH_REGISTRY as $PUBLISH_SCOPE, $PUBLISH_ACCESS; artifacts kept $RETENTION days"
+          echo "Publishes to $PUBLISH_REGISTRY as $PUBLISH_SCOPE, $PUBLISH_ACCESS; artifacts kept $RETENTION days"
           declare -A chosen
           for target in linux-x64 linux-arm64 windows-x64 windows-arm64 macos-x64 macos-arm64; do
             key="${target^^}"

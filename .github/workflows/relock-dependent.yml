@@ -37,14 +37,6 @@ on:
         description: Overrides the npm version versions.yml names, such as 11.20.0
         type: string
         default: ''
-      install-registry-url:
-        description: Overrides the registry versions.yml names for installing the scope's packages, such as https://npm.pkg.github.com
-        type: string
-        default: ''
-      install-scope:
-        description: Overrides the scope versions.yml names for that registry, such as @noldova-com
-        type: string
-        default: ''
       runs-on-linux-x64:
         description: Overrides the Linux x64 runner, as the JSON runs-on takes
         type: string
@@ -69,8 +61,6 @@ jobs:
       targets: linux-x64
       node-version: ${{ inputs.node-version }}
       npm-version: ${{ inputs.npm-version }}
-      install-registry-url: ${{ inputs.install-registry-url }}
-      install-scope: ${{ inputs.install-scope }}
       runs-on-linux-x64: ${{ inputs.runs-on-linux-x64 }}
 
   relock:
@@ -80,7 +70,6 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: read
-      packages: read
     steps:
       - name: Check the commit
         env:
@@ -97,13 +86,11 @@ jobs:
           ref: ${{ inputs.commit }}
           persist-credentials: false
 
-      - name: Set up Node.js for the organization's packages
+      - name: Set up Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: ${{ needs.versions.outputs.node-version }}
           package-manager-cache: false
-          registry-url: ${{ needs.versions.outputs.install-registry-url }}
-          scope: ${{ needs.versions.outputs.install-scope }}
 
       - name: Install the pipelines tool
         env:
@@ -120,13 +107,10 @@ jobs:
 
       - name: Install the locked packages
         if: inputs.install
-        env:
-          NODE_AUTH_TOKEN: ${{ needs.versions.outputs.install-registry-url == 'https://npm.pkg.github.com' && github.token || '' }}
         run: npm ci --no-audit --no-fund
 
       - name: Prepare the checkout
         env:
-          NODE_AUTH_TOKEN: ${{ needs.versions.outputs.install-registry-url == 'https://npm.pkg.github.com' && github.token || '' }}
           PREPARE_SCRIPTS: ${{ inputs.prepare-scripts }}
         run: |
           read -ra scripts -d '' <<< "$PREPARE_SCRIPTS" || true
@@ -140,7 +124,6 @@ jobs:
 
       - name: Relock
         env:
-          NODE_AUTH_TOKEN: ${{ needs.versions.outputs.install-registry-url == 'https://npm.pkg.github.com' && github.token || '' }}
           REQUEST: ${{ inputs.request }}
           LOCK_SCRIPTS: ${{ inputs.lock-scripts }}
         run: |
