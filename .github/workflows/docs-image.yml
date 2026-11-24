@@ -340,7 +340,7 @@ jobs:
                   }
                   continue
                 }
-                if (c == "#")
+                if (c == "#" && !inword)
                   break
                 if (c == "\"" || c == sq) {
                   quote = c
