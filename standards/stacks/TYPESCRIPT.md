@@ -44,6 +44,7 @@ public override readonly name: string = "ArgumentException";
   A public static field that builds itself from its own class stays after the statics it needs, because static fields initialize in declaration order.
   Fields of one group have no blank line between them; one blank line separates groups and every other member.
   Enum members have no blank lines between them.
+  Unlike other members, declarations without a body (an interface's members, an abstract class's abstract members) have no blank line between them; one blank line separates logical groups, such as properties from methods, and comes before a member that has a doc comment.
 
 ## Canonical values
 
@@ -152,6 +153,8 @@ public constructor(
 
 ## Tests
 
+- Code with no UI is tested with `@noldova/context.testing`: libraries, back ends, protocols, scripts, and an Angular package's services, models and other code that needs neither Angular's test bed nor the DOM.
+  Specs that need them follow [ANGULAR.md](ANGULAR.md#specs).
 - Tests mirror source paths under `tests/`, replacing `.ts` with `.test.ts` and keeping role suffixes:
 
 ```text
@@ -167,6 +170,11 @@ tests/services/snapshot-tracker.test.ts
 - The company uses one Node version everywhere: every repository's `engines`, every workflow's `node-version`, every test machine and every member's machine.
   Only a maintainer changes it, and then every repository moves together.
 - npm is the only package manager.
+- Code with no UI is built, tested and its tests timed the way [CONTEXT](../AGENTS.md#the-base-framework)'s scripts do (`scripts/build.ts`, `scripts/test.ts` and `scripts/test-timing.ts`, run as `npm run build`, `npm test` and `npm run test:timing`).
+  A repository imports the script files it needs from CONTEXT into its own `scripts/`, as [CODE.md](../CODE.md#licenses) says for code from another repository, and leaves out the rest.
+  Beyond them it adds only what these standards and the shared workflows name, such as `test:merge`, an end-to-end test's scripts, and an app's own build steps.
+  An Angular package builds with its own build script, as [Packages](#packages) says, and its specs run as [ANGULAR.md](ANGULAR.md#specs) says.
+- A repository uses CONTEXT's TypeScript version; one with Angular packages uses the newest version its Angular release supports.
 - Standalone automation is TypeScript; npm commands expose TypeScript entry points with arguments, not inline shell.
   Node runs the entry points directly, with no TypeScript runner while it can.
 - Scripts have no coverage requirement and no mirrored test files; the packages they build are tested, and a script gets a test of its own only for an outcome no run shows, as [TESTING.md](../TESTING.md#coverage) says.
@@ -175,8 +183,7 @@ tests/services/snapshot-tracker.test.ts
 
 - Each package has its own `package.json` beside its source, with its name, version and entry points.
   Its name is the scope followed by its folder's name after `noldova.`: `noldova.context.text` is `@noldova/context.text`.
-  A public repository's packages take the `@noldova/` scope on npm's registry, and a private one's `@noldova-com/` on GitHub's.
-  A private repository's packages take the same lowercase folders, such as `noldova.example.shell`, but take hyphenated names, their folder's name after `noldova.` with hyphens for its dots, such as `@noldova-com/example-shell`, until the repository goes public, and then take their names from their folders with the `@noldova/` scope.
+  Every package takes the `@noldova/` scope on npm's registry.
 - The project's own scripts build the packages: each is built into `_build/packages/<folder name>`, packed with `npm pack` into `_packages/`, and installed from there with `npm install --no-save`, so a library's or a test's own packages never enter its manifest or lockfile.
   An app built on Desktop instead pins its own repository's packages in its one lock, as `file:` archives from `_packages/`, so that one lock covers the whole app, and publishes none of them; a library repository and every test keep installing with `--no-save`, outside the lock.
   No third-party build or packaging tool does this.

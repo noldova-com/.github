@@ -76,7 +76,6 @@ jobs:
     uses: noldova-com/.github/.github/workflows/build-and-test.yml@<full commit SHA> # <tag>
     permissions:
       contents: read
-      packages: read
     with:
       targets: linux-x64 windows-x64
       publishes: true
@@ -95,15 +94,14 @@ jobs:
 - With `separate-test`, such as `docs`, a Linux x64 job of its own, "Separate test", builds and runs `npm run test:docs`, and every target's tests get `NOLDOVA_SEPARATE_TEST=docs`, so that the repository's `npm run test` leaves that part out. Use it for a part, such as a docs site, that is checked once rather than on every target.
   With `separate-test-report` beside it, such as `_build/docs`, the job keeps what it names when the test step fails or is cancelled, such as by the job's time limit, as the artifact `separate-test-report-<attempt>`, for as many days as [Shared settings](#shared-settings) keeps a run's artifacts: a folder or a file relative to the checkout, or several on lines of their own, as `actions/upload-artifact` takes them, hidden files such as a tool's `node_modules/.vite` cache included, and nothing when none of them exists. It keeps nothing when the test passes, then checks that tracked files are unchanged, and nothing when an earlier step fails, since the test never ran. Anyone who can read the run can download the artifact, anyone at all in a public repository, so name only folders that hold no secret, such as an `.env` or `.npmrc` file, hidden ones included. "Plan the parts" refuses it without `separate-test`; without it, the job keeps nothing.
 - All three are off by default. A "Plan the parts" job checks them, refusing `shard-outputs` without `shards` and `separate-test-report` without `separate-test`, and lists the jobs, and runs only when one of them, `separate-test-report` or `end-to-end-shards` is set, so a caller that sets none runs none of those jobs, and its run and its pull request's checks list "Plan the parts", "Separate test" and "Merge the parts of ${{ matrix.name }}", its name unexpanded, as skipped.
-- With `end-to-end`, such as `e2e`, a Linux x64 job of its own, "End-to-end test", runs the repository's end-to-end test of its app: it builds with `npm run build`, runs the command `end-to-end-prepare` names, if any, such as `npm run install:app && npm run build:app`, with the build's token for GitHub's registry, then runs `npm run test:<name>`, `npm run test:e2e` here, under a virtual display, Xvfb at 1920 by 1080 on a free display it picks itself with `-displayfd`, so jobs sharing a machine don't race for one, open only to clients holding a new `xauth` cookie, which the test finds through `XAUTHORITY`, inside a D-Bus session of its own, a `dbus-daemon --session`, with GNOME Keyring's Secret Service unlocked on an empty login keyring in the runner's temporary folder, so an app that keeps secrets finds one, the bus and the keyring's daemon both in the foreground as the test's children, ended and waited for once the test ends, and killed when either still runs five seconds after it is asked to stop; a bus that doesn't start fails the job with "The session bus did not start"; the test starts only once that keyring owns `org.freedesktop.secrets` on the session bus, which `gdbus wait` waits for, without starting it, for at most 30 seconds, failing the job with an error otherwise. In a trial, each flake-proof run, the keyring's start and this wait included, took under half a second, so 30 seconds only guards against a keyring that never takes the name, with a wide margin.
+- With `end-to-end`, such as `e2e`, a Linux x64 job of its own, "End-to-end test", runs the repository's end-to-end test of its app: it builds with `npm run build`, runs the command `end-to-end-prepare` names, if any, such as `npm run install:app && npm run build:app`, then runs `npm run test:<name>`, `npm run test:e2e` here, under a virtual display, Xvfb at 1920 by 1080 on a free display it picks itself with `-displayfd`, so jobs sharing a machine don't race for one, open only to clients holding a new `xauth` cookie, which the test finds through `XAUTHORITY`, inside a D-Bus session of its own, a `dbus-daemon --session`, with GNOME Keyring's Secret Service unlocked on an empty login keyring in the runner's temporary folder, so an app that keeps secrets finds one, the bus and the keyring's daemon both in the foreground as the test's children, ended and waited for once the test ends, and killed when either still runs five seconds after it is asked to stop; a bus that doesn't start fails the job with "The session bus did not start"; the test starts only once that keyring owns `org.freedesktop.secrets` on the session bus, which `gdbus wait` waits for, without starting it, for at most 30 seconds, failing the job with an error otherwise. In a trial, each flake-proof run, the keyring's start and this wait included, took under half a second, so 30 seconds only guards against a keyring that never takes the name, with a wide margin.
   On GitHub's runners the job first installs `xvfb`, `xauth`, `dbus-daemon`, `dbus-bin`, `gnome-keyring` and `libglib2.0-bin`, for `gdbus`, from Ubuntu's packages, within 10 minutes: from the image's package lists first, and only when that fails after updating the lists, with each of apt's requests given up after 30 seconds and tried 3 more times, so a stalled mirror costs minutes rather than the job; a self-hosted runner must have them, and the job fails naming the one it lacks.
   The test stops three minutes before the job's `timeout-minutes` run out, failing the job, so a test that hangs still leaves its report; the job fails at once when that leaves the test under a minute.
   When the test step fails or is cancelled, the job keeps the folder `end-to-end-report` names, such as `_build/e2e`, as the artifact `end-to-end-report-<attempt>`, and Xvfb's own output, such as `xkbcomp`'s keysym warnings, which stays out of the job's log, as the artifact `virtual-display-log-<attempt>`, and nothing when an earlier step fails, since the test never ran; when it passes, the job checks that tracked files are unchanged, as the targets' jobs do.
   It is off by default and needs no "Plan the parts": a caller that doesn't set it runs no end-to-end job, and "End-to-end test" is listed as skipped.
   With `end-to-end-shards` beside it, from 2 to 8, such as `2`, the test runs as that many Linux x64 jobs side by side, named such as "End-to-end test (1 of 2)": each part builds and prepares as above, then runs `npm run test:<name> -- --shard=<part>/<parts>`, so the repository's end-to-end script takes that option and runs only its share, as Playwright's `--shard` does, and a failed part keeps its report as `end-to-end-report-<part>-<attempt>` and Xvfb's output as `virtual-display-log-<part>-<attempt>`. "Plan the parts" refuses it without `end-to-end` or outside 2 to 8, and lists the parts. Use it when the end-to-end test's time is in the test itself, since each part builds the app again. It is off by default, and a caller that leaves it off runs one "End-to-end test" job.
 - With `unprivileged-user-namespaces: true`, for a repository whose tests start Chromium, such as through Electron, each Linux job, the separate test's and the end-to-end test's included, allows unprivileged user namespaces before the tests, which Chromium's sandbox needs to start without its setuid helper: on GitHub's runners, whose Ubuntu restricts them through AppArmor, it sets `kernel.apparmor_restrict_unprivileged_userns` to 0, and on every Linux runner it checks with `unshare -Ur true`, failing the job with an error when the runner still refuses them. It is off by default, and a caller that leaves it off runs its Linux jobs without it.
-- `timeout-minutes` bounds each target's job, and the separate test's and the end-to-end test's, 30 by default; the Node, npm, install registry and runner overrides are those of [Shared settings](#shared-settings).
-- The build steps get the run's own token for GitHub's registry only, as the release's build does, and so does `pipelines reproducible`, which builds the commit again; the tests and the other checks get none.
+- `timeout-minutes` bounds each target's job, and the separate test's and the end-to-end test's, 30 by default; the Node, npm and runner overrides are those of [Shared settings](#shared-settings).
 - An "All targets" job passes only when every target passed, each part, the separate test and each part of the end-to-end test included. Keep the calling job named `Build and test`: GitHub puts its name before the shared jobs', so a required-checks rule lists "Build and test / All targets", and a pull request lists each target as "Build and test / Build and test / Linux x64".
 
 ## Releasing npm packages
@@ -137,7 +135,6 @@ jobs:
     uses: noldova-com/.github/.github/workflows/release-npm.yml@<full commit SHA> # <tag>
     permissions:
       contents: write
-      packages: write
       id-token: write
     with:
       version: ${{ inputs.version }}
@@ -145,37 +142,26 @@ jobs:
       environment: npm
 ```
 
-- Where a release publishes comes from [Shared settings](#shared-settings): a public repository publishes `@noldova` packages to npm's registry with public access, and a private repository publishes `@noldova-com` packages to GitHub's registry with restricted access; a caller overrides them with `publish-registry-url`, `publish-scope` and `publish-access`.
-- A private repository's caller names its own environment, and passes `keep-versions` and `secrets: inherit` when it keeps only the newest versions.
+- Where a release publishes comes from [Shared settings](#shared-settings): `@noldova` packages to npm's registry with public access; a caller overrides them with `publish-registry-url`, `publish-scope` and `publish-access`.
 - A release always builds main's head: one rule for every release, whichever registry it publishes to.
-  The jobs first check that the run started on main at `commit`, so `GITHUB_REF` is `refs/heads/main` and `GITHUB_SHA` is the commit released, and fail before anything is tagged otherwise, then tag the commit with the version, after checking that it is on main and holds the version, then build and check the archives, publish them in the caller's environment, and keep the newest `keep-versions` versions when it is above 0.
+  The jobs first check that the run started on main at `commit`, so `GITHUB_REF` is `refs/heads/main` and `GITHUB_SHA` is the commit released, and fail before anything is tagged otherwise, then tag the commit with the version, after checking that it is on main and holds the version, then build and check the archives, and publish them in the caller's environment.
   The tag comes first, before the publish waits for its approval, because GitHub lets the run's own token tag only a commit whose workflow files match main's, so a workflow change merged during the wait would leave the version untagged; when the tag is refused, nothing is built or published.
   A version whose build or publish then fails keeps its tag: a release of the same version at the same commit can still publish it while main's head is still that commit; once main has moved, a new version is released at the head.
-- The build job installs the dependencies from the registry [Shared settings](#shared-settings) names for installs, as the flake proof does; the run's own token goes to GitHub's registry only.
-- No package's install scripts run in any job, as [Install scripts](#install-scripts) says, and the publishing token is set only on the publish and prune steps.
-- The tag, build, publish and prune jobs run the steps of [`@noldova/tools.pipelines.github`](https://www.npmjs.com/package/@noldova/tools.pipelines.github), installed at the exact version `RELEASE_TOOL` names from npm's registry: `pipelines source` checks that the commit is on main and that its `version.json` holds the version; `pipelines archive` checks the built archives; `pipelines publish` publishes them and waits until the registry serves them; `pipelines prune` deletes the older versions no repository locks; `pipelines tag` tags the commit.
+- The build job installs the dependencies from npm's registry with no token, as the flake proof does.
+- No package's install scripts run in any job, as [Install scripts](#install-scripts) says, and the publishing token is set only on the publish step.
+- The tag, build and publish jobs run the steps of [`@noldova/tools.pipelines.github`](https://www.npmjs.com/package/@noldova/tools.pipelines.github), installed at the exact version `RELEASE_TOOL` names from npm's registry: `pipelines source` checks that the commit is on main and that its `version.json` holds the version; `pipelines archive` checks the built archives; `pipelines publish` publishes them and waits until the registry serves them; `pipelines tag` tags the commit.
 - So the repository provides `version.json` at its root, such as `{ "version": "1.4.0" }`; a `package.json` under `src/`, outside a `tests` folder, for every package it releases, and `"private": true` on any other; and a build that packs each of those packages, and nothing else, into `_packages/` at the version, recording the commit it was built from as `gitHead`, with its other packages as dependencies at that same version.
 - The build answers `npm run build --silent -- --list-copies`, which builds nothing and prints one line for each file it copies unchanged into a package, with tabs between the source's path from the repository's root, the package's name and the path inside the package, then `end of copies` as the last line, also when it copies nothing; `pipelines archive` checks that each archive holds each copy, byte for byte equal to its source, in the release and in the build with `publishes: true`.
 - Each package's archive holds `package/LICENSE`, its manifest has a `license` text, and it holds no file of a kind that holds credentials: `.npmrc`, `.netrc`, `.env` or `.env.<name>`, `id_rsa`, `id_dsa`, `id_ecdsa`, `id_ed25519`, or a name ending in `.pem`, `.key`, `.p12` or `.pfx`; `pipelines archive` and `pipelines publish` fail otherwise.
-- A repository that passes `keep-versions` needs no release script of its own: `pipelines prune` deletes each package's older release versions on GitHub's registry, and only after checking that the version just published is the newest of each package.
-  It keeps every version a `package-lock.json` holds on the default branch of a repository the version-updates App can reach, and deletes nothing when it can't read them all.
-  The job runs only for GitHub's registry, so a caller on another registry that passes `keep-versions` gets no pruning and no failure; the step itself refuses any other registry, deleting nothing.
-  It takes its token from `GITHUB_TOKEN`, which holds the `registry-token` secret when the caller passes one and the run's own token otherwise; the publish step's token is in `NODE_AUTH_TOKEN`.
-  It reads the lock files with a token of the App, made as [the dependents job](#updating-dependents) makes its own, with contents and metadata read only, from the `VERSION_UPDATES_APP_KEY` secret of the caller's `updates-environment`, `version-updates` unless the caller names another; so the caller passes `secrets: inherit`, and the job fails first when the key is empty.
-  `secrets: inherit` can't be combined with `secrets: registry-token: …`, and `registry-token` isn't a name a caller's secret can have, so a caller that passes `registry-token` can't prune.
-- Without a `registry-token` or `PUBLISH_TOKEN` secret, GitHub's registry takes the run's own token, and npm's registry takes trusted publishing: the package's trusted publisher names the calling repository, its `release-npm.yml` and its environment, and npm records the run as the version's provenance.
+- Without a `registry-token` or `PUBLISH_TOKEN` secret, npm's registry takes trusted publishing: the package's trusted publisher names the calling repository, its `release-npm.yml` and its environment, and npm records the run as the version's provenance.
 - A registry's token that only the publish environment may hold is that environment's `PUBLISH_TOKEN` secret, which the publish job reads however the caller passes secrets, since the job names that environment, and takes over a `registry-token` the caller passes, so a caller that moves its token into the environment but still passes the old secret publishes with the environment's.
   `secrets: registry-token: ${{ secrets.<name> }}` passes a repository or organization secret instead: a job that calls a shared workflow can't name an environment, so the caller's line resolves no environment's secret, and a secret every workflow of the repository can read is guarded by no approval.
   GitHub takes an environment's secret over the repository's, and the repository's over the organization's, so with `secrets: inherit` a repository's or organization's own `PUBLISH_TOKEN` is read, silently, whenever the environment holds none: the token lives only in the environment.
 - A new package's first publish to npm's registry can't use trusted publishing, since the package doesn't exist yet: the caller passes `secrets: inherit` and holds a one-time token as the environment's `PUBLISH_TOKEN`, and removes the secret after the first publish, so trusted publishing takes over.
   A public repository's packages on npm's registry get provenance either way, as [Verifying a release](#verifying-a-release) says.
-- The caller grants `contents: write`, `packages: write` and `id-token: write`, whichever registry it publishes to, since a called job gets no permission its caller didn't grant.
+- The caller grants `contents: write` and `id-token: write`, since a called job gets no permission its caller didn't grant.
 - The publish job runs in the caller's environment, which an environment that needs approval approves; an environment name that doesn't exist yet is created on first use, with no protection.
-  The prune job runs in the caller's `updates-environment`, with no approval of its own: the publish approval covers its deletes, and it deletes only versions no repository locks.
-- The prune job runs only for GitHub's registry: a version published to npm's registry is never deleted.
-- GitHub's registry serves a version's metadata with only some of its manifest's fields, although the archive it serves holds the whole manifest: `pipelines publish` sends the archive as built, and the registry's metadata drops `peerDependenciesMeta`, `exports`, `type` and `publishConfig`.
-  npm reads `exports` and `type` from the installed package, but it resolves peers from the registry's metadata, so it takes a module's optional peers as required and installs them at the root that installs the module.
-  So a root that installs a module with optional peers from GitHub's registry installs with `--legacy-peer-deps`, set as `legacy-peer-deps=true` in that root's `.npmrc` or passed by the script that installs it, and provides the peers it needs itself.
+- The release never deletes a version it published.
 
 ### Native addons
 
@@ -204,7 +190,7 @@ A package that ships a native addon declares it in its `package.json`, anywhere 
 
 A public repository's packages on npm's registry carry npm's [provenance](https://docs.npmjs.com/generating-provenance-statements): a statement, signed with Sigstore's public instance and recorded in its public log, of the repository, commit, workflow and run that built and published each version.
 
-- The publish job sets `npm_config_provenance` only when the calling repository is public and the registry is npm's, so `npm publish` makes the statement; npm refuses provenance from a private repository, and GitHub's registry keeps none, so a private repository's or GitHub's registry's packages carry none.
+- The publish job sets `npm_config_provenance` only when the calling repository is public and the registry is npm's, so `npm publish` makes the statement; npm refuses provenance from a private repository, so a private repository's packages carry none.
 - The publish job is the only job with `id-token: write`, which signs the statement and, for trusted publishing, stands in for a token; GitHub grants permissions per job, not per step.
 - The statement names the calling repository, the caller's release workflow, its run, and the run's commit, `GITHUB_SHA`, which is `commit`, main's head, the commit the release builds and tags `v<version>`: a run that started on any other branch or at any other commit fails before it tags anything.
 
@@ -228,7 +214,6 @@ After a release, a repository proposes the version to every repository that pins
     uses: noldova-com/.github/.github/workflows/update-dependents.yml@<full commit SHA> # <tag>
     permissions:
       contents: read
-      packages: read
     with:
       version: ${{ inputs.version }}
       commit: ${{ inputs.commit }}
@@ -244,12 +229,12 @@ After a release, a repository proposes the version to every repository that pins
   The step reads whether the releasing repository is private with the App's token, and counts it as public when it can't read it.
 - The commits are the App's bot account's, as author and committer.
 - One releasing repository's runs take turns, so two quick releases never race on the same branches; another repository's run goes on at the same time.
-- npm refreshes the lock files from the registry [Shared settings](#shared-settings) names for installs; the run's own token goes to GitHub's registry only, so the caller grants `packages: read`, and the packages a lock file names must let the calling repository read them.
+- npm refreshes the lock files from npm's registry, with no token.
 - A dependent with its own `.github/workflows/relock.yml` relocks itself, as [Relocking a dependent](#relocking-a-dependent) says: the step starts every such run first and waits at most 20 minutes for all of them together, so the job's time limit is 45 minutes.
 
 ### Relocking a dependent
 
-A dependent whose lock files need its own build, or packages only it may read, relocks itself in its own run, which the dependents step starts and reads; it calls the shared workflow from `.github/workflows/relock.yml`, started with `workflow_dispatch` only:
+A dependent whose lock files need its own build relocks itself in its own run, which the dependents step starts and reads; it calls the shared workflow from `.github/workflows/relock.yml`, started with `workflow_dispatch` only:
 
 ```yaml
 name: Relock
@@ -273,7 +258,6 @@ jobs:
     uses: noldova-com/.github/.github/workflows/relock-dependent.yml@<full commit SHA> # <tag>
     permissions:
       contents: read
-      packages: read
     with:
       commit: ${{ inputs.commit }}
       request: ${{ inputs.request }}
@@ -284,9 +268,9 @@ jobs:
 - The job checks out the commit, checks the Node and npm versions with `pipelines toolchain`, as [Building and testing](#building-and-testing) does, runs `npm ci` unless `install` is `false`, then each npm script `prepare-scripts` names, in order, as the repository's own build does, and runs `pipelines relock` from the same tool, at the version `PIPELINES_TOOL` names; its README says what the step moves and writes.
 - `prepare-scripts` and `lock-scripts` take their values separated by spaces or lines, so a YAML `|` block works too.
 - `lock-scripts` names each lock file the repository relocks with its own npm script, as `<lock file>=<npm script>` instead of npm's own relock; the other tracked lock files are relocked as the step's README says.
-- The result is the run's artifact `relock`, kept one day, which the dependents step reads; the run pushes nothing, and its token only reads the repository's contents and packages.
+- The result is the run's artifact `relock`, kept one day, which the dependents step reads; the run pushes nothing, and its token only reads the repository's contents.
 - The run builds the repository's own code at the commit it is given, as its own checks do, so only those who may start its workflows can start it; the commit must be a full hash.
-- The run takes the Node and npm versions, the registry and the runner from [Shared settings](#shared-settings), with the same overrides as the other shared workflows.
+- The run takes the Node and npm versions and the runner from [Shared settings](#shared-settings), with the same overrides as the other shared workflows.
 
 ## Reaching the callers
 
@@ -375,7 +359,6 @@ jobs:
     uses: noldova-com/.github/.github/workflows/flake-proof.yml@<full commit SHA> # <tag>
     permissions:
       contents: read
-      packages: read
     with:
       ref: ${{ inputs.ref }}
       filter: ${{ inputs.filter }}
@@ -388,10 +371,10 @@ jobs:
 - A plan job checks the inputs and splits the runs into up to `jobs` parallel jobs per target; each job checks out `ref`, installs the dependencies with `npm ci`, with no package's install scripts, as [Install scripts](#install-scripts) says, builds with `npm run build` and runs the npm script `script`, `test` by default, with the filters, once per run.
 - Each job writes its runs, passes and failures to the run's summary and fails when any run failed; a failed run's last 60 log lines go to the job's log, and every run's whole log, passed or failed, goes to the job's artifact, `flake-proof-<target>-<job>-<attempt>`, hidden files included, as `run-<n>.log`, kept for the days versions.yml names.
 - `targets` takes any of `linux-x64`, `linux-arm64`, `windows-x64`, `windows-arm64`, `macos-x64` and `macos-arm64`, in any number and order, separated by spaces; a target named twice runs once, and the run fails before the test jobs start on a name that isn't a target or a target with no runner.
-- The caller may also pass `node-version`, `npm-version`, `install-registry-url`, `install-scope`, `retention-days` and `runs-on-<target>`, which [Shared settings](#shared-settings) explains; a caller that passes none takes the defaults.
+- The caller may also pass `node-version`, `npm-version`, `retention-days` and `runs-on-<target>`, which [Shared settings](#shared-settings) explains; a caller that passes none takes the defaults.
 - A repository proves an end-to-end test with four more inputs, which its caller adds to its own `workflow_dispatch` and passes on:
   - `script`: the npm script each run runs, such as `test:e2e`.
-  - `prepare`: npm scripts each job runs once, after `npm run build` and before the runs, separated by spaces, such as an app's install and build. They run with the build's token and with no package's install scripts.
+  - `prepare`: npm scripts each job runs once, after `npm run build` and before the runs, separated by spaces, such as an app's install and build. They run with no package's install scripts.
   - `display`: a boolean, off by default. On Linux it starts a new Xvfb for each run, on a 1920×1080 screen, on a free display Xvfb picks itself with `-displayfd`, so jobs sharing a machine don't race for one, open only to clients holding a new `xauth` cookie, which the run finds through `XAUTHORITY`, and runs the run inside a D-Bus session of its own, a `dbus-daemon --session`, for a test that opens windows, with an unlocked `gnome-keyring` secret service on a new empty keyring, for a test whose app keeps a secret, the bus and the keyring's daemon both in the foreground as the run's children, ended and waited for once the run's command ends, and killed when either still runs five seconds after it is asked to stop, so they leave no process behind; each run starts only once that keyring owns `org.freedesktop.secrets` on the session bus, which `gdbus wait` waits for, without starting it, for at most 30 seconds; otherwise the run's test never starts and the job ends with an error, since a runner whose keyring fails is at fault, not the test, and its run isn't counted as failed. In a trial, each flake-proof run, the keyring's start and this wait included, took under half a second, so 30 seconds only guards against a keyring that never takes the name, with a wide margin. It installs `xvfb`, `xauth`, `dbus-daemon`, `dbus-bin`, `gnome-keyring` and `libglib2.0-bin` on a GitHub-hosted runner, from the image's package lists first and, only when that fails, again after updating them, with three retries and 30-second timeouts for each download, fails on a self-hosted one that lacks Xvfb, `xauth`, `dbus-daemon`, `gdbus` or `gnome-keyring-daemon`, fails when the session bus doesn't start, and fails when Xvfb names no display within 30 seconds, printing Xvfb's output after the error: in the trials Xvfb named its display in under a second, so 30 seconds only guards against a hung Xvfb, with a wide margin. Otherwise Xvfb's output, such as `xkbcomp`'s keysym warnings, stays out of the job's log, as `run-<n>-xvfb.log` beside each run's log in the artifact. Windows and macOS runners have a display and a secret store of their own. On GitHub's Windows runners, whose screen is 1024×768 with a 1024×720 work area, `display` sets the screen to 1920×1080 through `ChangeDisplaySettings` before the runs, so a test that sizes its windows has room; the arm64 runner has no `Set-DisplayResolution`. The job fails at that step, naming the size it found and the display's modes, when the screen can't be set, and naming the size when it ends up another size. On GitHub's macOS runner it reads the main screen's size from `NSScreen`, and when it is smaller than 1920×1080, as on the arm64 runner's 1024×768, it switches the main display to its 1920×1080 mode for the session through CoreGraphics, with a short Swift script the runner's own Swift runs. The job fails at that step, naming the display's modes, when there is no such mode, and naming the size when the screen is still smaller afterwards. In the trials the arm64 runner's display offered a 1920×1080 mode and took it, and the x64 runner had 1920×1080 already. Linux needs no step, since each run's Xvfb is 1920×1080. The Windows step's PowerShell and the macOS step's Swift script are [CODE.md](standards/CODE.md#automation)'s named exceptions to Bash and the project's language: each only reaches an operating-system facility, the display's mode, that neither Bash nor Node.js reaches without a native package.
   - `reports`: the folders in the checkout the script writes its report and results to, separated by spaces, such as `_build/ui/report _build/ui/results`. After each run, each folder that exists moves into the artifact as `run-<n>/<folder>`, so every run keeps its own report beside its log; the plan job fails on a folder outside the checkout, inside `_build/flake-proof`, or holding it, such as `_build`.
 
@@ -403,8 +386,8 @@ jobs:
   On Linux and macOS each run starts in a process group of its own and carries a marker in its environment, `FLAKE_PROOF_RUN`, which every process it starts inherits, so the watchdog stops everything the run started, such as the test runner and its servers, and also a browser started detached or a daemon that left the group with `setsid`, found by the marker in `/proc/<pid>/environ` on Linux and in `ps -E` on macOS; it can't find a process that clears its environment and leaves the group, or one that runs as another user, such as through `sudo`, which resets the environment, and whose environment it can't read. On Windows a PowerShell launcher puts itself in a job object of its own before it starts the run, so every process the run starts itself is in the job, whatever its parent; a process a service starts for the run, such as a COM server, a scheduled task or one WMI starts, isn't. At the limit the watchdog asks the launcher to stop the run through a file the launcher watches, and kills the launcher only 30 seconds later, which ends every process in its job.
   The launcher is PowerShell with C# inside, an exception to [CODE.md](standards/CODE.md#automation)'s rule that every shell step is Bash, as that rule allows for an operating-system facility: a job object is a Win32 API that neither Bash nor Node reaches without a native package. The Windows screen step, PowerShell with C# too, is the same exception, since `ChangeDisplaySettings` is a Win32 call.
   A process a run leaves behind is stopped before the next run starts: on Linux and macOS with `TERM` and then `KILL` after 30 seconds, and the job fails if one is still running 5 seconds after its `KILL`; on Windows the launcher ends the job's other processes once the run's own has ended, or once it is asked to stop, ending only a process it finds in its own job, and waits, up to 25 seconds, so before the watchdog's kill at 30, until the job holds only itself, as Windows ends a process only some time after it is told to, and then reports how many it found; a run whose own process ended by itself isn't counted as reaching its limit when the limit comes during this wait; the job fails if some are still running then, or if the launcher can't say. A report folder that can't move into the artifact is named with `::warning` and the runs go on.
-- The jobs install from the registries and run on the runners [Shared settings](#shared-settings) names; a private repository's jobs read the organization's private packages from GitHub's registry with the run's own token, which `packages: read` allows, and a public repository's jobs hand npm no token.
-- The caller grants `contents: read` and `packages: read`, since a called job gets no permission its caller didn't grant.
+- The jobs install from npm's registry, handing npm no token, and run on the runners [Shared settings](#shared-settings) names.
+- The caller grants `contents: read`, since a called job gets no permission its caller didn't grant.
 
 ## Building a docs image
 
@@ -433,20 +416,22 @@ jobs:
 ```
 
 - `build` is the bash command that installs the dependencies and builds the site, run from the repository's root with `-euo pipefail`; `output` is the folder it writes the site to, which must hold an `index.html`; `image` is the image's name under the organization on `ghcr.io`, lowercase.
-  `tag` is the tag it is pushed under, the commit's full hash by default; a branch's trial run passes a tag of its own, and nothing deploys by tag.
+  `ref`, empty by default, is the full hash of the calling repository's commit to build, such as the commit a release names, for a site built from a release rather than from the commit its run is on; empty builds the run's own commit, as before.
+  `tag` is the tag it is pushed under, the built commit's full hash by default; a branch's trial run passes a tag of its own, and nothing deploys by tag.
   `nginx`, empty by default, is a folder in the repository laid out as `/etc/nginx/`, holding at least `nginx.conf`, for a site that needs its own nginx settings, such as its own redirects or headers; its files and folders go under `/etc/nginx/` in place of the shared `nginx.conf` and `headers.conf`, and the site keeps the rules below only as far as its own settings do.
   `env`, empty by default, is the plain configuration values the image starts with, one `NAME=value` a line, each name once, such as a variable an nginx template reads; never a secret, since anyone who can pull the image can read them.
   With both empty, the image is the same as without them, byte for byte.
-- The site job checks out the commit, sets up Node and npm as [Shared settings](#shared-settings) says, runs `build` with no package's install scripts, as [Install scripts](#install-scripts) says, and with the run's token for GitHub's registry only, then keeps the folder as the run's artifact, and the `nginx` folder as another when it is set, after checking that each resolves, links and all, to a folder inside the checkout, and that the `nginx` folder holds `nginx.conf` and only files and folders.
+- The site job checks out the commit, `ref`'s when it is set, sets up Node and npm as [Shared settings](#shared-settings) says, runs `build` with no package's install scripts, as [Install scripts](#install-scripts) says, and with no token, then keeps the folder as the run's artifact, and the `nginx` folder as another when it is set, after checking that each resolves, links and all, to a folder inside the checkout, and that the `nginx` folder holds `nginx.conf` and only files and folders.
 - The image job builds the image without Docker, with [crane](https://github.com/google/go-containerregistry/blob/main/cmd/crane/README.md) `v0.22.1`, which it downloads from its release and checks against the SHA-256 the release's `checksums.txt` gives for `go-containerregistry_Linux_x86_64.tar.gz`; nothing is installed on the runner.
   It appends one layer onto `nginxinc/nginx-unprivileged` `1.30.6-alpine`, pinned by the digest of its multi-platform index, for `linux/amd64`: the site under `/usr/share/nginx/html/`, and [nginx.conf](.github/docs-image/nginx.conf) and [headers.conf](.github/docs-image/headers.conf) from this repository at the workflow's own commit, under `/etc/nginx/`, so a repository keeps no copy of them, or else the files of its `nginx` folder there.
   The layer's files are root's, readable by all, and dated at the commit's time, so a new commit's files never share an older one's validators.
+  Before it pushes, it reads every file under the layer's `/etc/nginx/`, the shared ones or the repository's own, and stops the run, naming the file and line, unless `nginx.conf` sets `access_log off` in its `http` block and no file sets any other `access_log`, and `nginx.conf` sets `error_log` at its top level to the `emerg` level, as every other `error_log` must be; so a docs site logs no requests and only the errors that stop nginx.
 - It pushes `ghcr.io/<organization>/<image>:<tag>` with the run's own token, which `packages: write` allows and which goes to `ghcr.io` only, then, when `env` is set, adds its values to the image's configuration under the same tag with `crane mutate`, and writes the image, the tag and the digest to the run's summary and to the workflow's `image` and `digest` outputs; whatever deploys the site takes it by that digest.
 - With the shared settings, the image runs nginx as user 101 on port 8080, writing only under `/tmp`, so it runs on a read-only root with a writable `/tmp`, and with one worker process, since `auto` would start one per host CPU, whatever the container's CPU and memory limits.
   It serves each prerendered page at its path, `/a/b` from `/a/b/index.html`, answers 404 for a path with no file, never another page, and 403 for a path ending in `/` whose folder holds no `index.html`, such as `/assets/`, and answers `GET /healthz` with 200 and `ok`.
   Every answer carries the headers in `headers.conf`: `Cache-Control`, a year and immutable for a file whose name carries an 8-character content hash, such as `main-ABCD1234.js`, and `no-cache` for the rest; HSTS; a content security policy that limits plugins, the base address, form targets and framing, and leaves scripts and styles alone; `nosniff`; and the referrer policy.
 - Both jobs run on the Linux x64 runner [Shared settings](#shared-settings) names, and the image job checks that it is Linux x64.
-- The caller grants `contents: read` and `packages: write`, since a called job gets no permission its caller didn't grant; the site job keeps only `contents: read` and `packages: read`.
+- The caller grants `contents: read` and `packages: write`, since a called job gets no permission its caller didn't grant; the site job keeps only `contents: read`.
 - A new image package is private; the organization's owners choose whether it is public.
 
 ## Moving an image label
@@ -484,7 +469,7 @@ jobs:
 
 ## Install scripts
 
-- The build and test, release and flake proof workflows set `npm_config_ignore_scripts`, so every npm their jobs run, `npm ci` and any npm a repository's own scripts run, runs no package's install scripts while the run's token is set.
+- The build and test, release and flake proof workflows set `npm_config_ignore_scripts`, so every npm their jobs run, `npm ci` and any npm a repository's own scripts run, runs no package's install scripts.
 - `npm ci` then runs none of the repository's own install scripts either, so after it the install step runs the root `package.json`'s `preinstall`, `install`, `postinstall` and `prepare` scripts by name, in that order, each only when the root has it; an npm they run installs with no package's install scripts too.
 - Nothing else runs: not `prepublish`, `preprepare` or `postprepare`, not `preinstall` before the dependencies as `npm ci` would run it, and not a workspace's scripts, so an install that needs any other script needs a step of its own in these workflows.
 - `npm run` still runs the script it names, such as `npm run build` or `npm test`, but not its `pre` and `post` scripts, so a repository puts what those would run in the script itself.
@@ -492,11 +477,11 @@ jobs:
 
 ## Shared settings
 
-[versions.yml](.github/workflows/versions.yml) holds the settings every shared workflow uses in one place: the Node and npm versions, the registries to install from and publish to, how long artifacts are kept, and the runners; each shared workflow's first job calls it, and its other jobs take the settings from its outputs, so a caller names none:
+[versions.yml](.github/workflows/versions.yml) holds the settings every shared workflow uses in one place: the Node and npm versions, the registry to publish to, how long artifacts are kept, and the runners; each shared workflow's first job calls it, and its other jobs take the settings from its outputs, so a caller names none:
 
 - The Node version is `26.13.1`, and the npm version that comes with it, `11.20.0`, is checked after setup.
-- A private repository installs the `@noldova-com` scope's packages from GitHub's registry, `https://npm.pkg.github.com`, and every other package from npm's registry; a public repository installs every package from npm's registry, with no token.
-- A release from a public repository publishes `@noldova` packages to npm's registry, `https://registry.npmjs.org`, with public access; from a private repository, `@noldova-com` packages to GitHub's registry with restricted access.
+- Every repository installs every package from npm's registry, with no token.
+- A release publishes `@noldova` packages to npm's registry, `https://registry.npmjs.org`, with public access.
 - A private repository's artifacts are kept for 1 day, a public repository's for 7, except a release's checked archives, which the publish job takes after its approval: they are kept 35 days, whatever `retention-days` says, since a run ends after 35 days at most and GitHub lets a deployment wait 30 days for its approval, after which the publish job may still wait for a runner and set up before it takes them.
 - A public repository's jobs run on GitHub-hosted runners: `ubuntu-24.04` and `ubuntu-24.04-arm` for Linux, `windows-2025` and `windows-11-arm` for Windows, `macos-15-intel` and `macos-15` for macOS, x64 and arm64.
 - A private repository's jobs run where the organization's variables say: with `RUNNER_TYPE` set to `GITHUB`, on the same GitHub-hosted runners; otherwise on the organization's own runners, whose `runs-on` value `RUNS_ON_SELF_HOSTED_<system>` holds as JSON for x64 and `RUNS_ON_SELF_HOSTED_<system>_ARM64` for arm64, for the systems `LINUX`, `WINDOWS` and `MACOS`; a target whose variable is empty has no runner.
@@ -504,10 +489,9 @@ jobs:
 A caller overrides any of them for its own runs:
 
 - `node-version` takes an exact version, such as `26.13.1`; with it, npm is checked only when `npm-version` names the version too.
-- `install-registry-url` and `install-scope` go together: the install reads that scope's packages from that registry, and the run's token goes only to GitHub's registry.
 - `retention-days` takes 1 to 90.
 - A release's `publish-registry-url`, `publish-scope` and `publish-access` take a registry's https address, a scope and `public` or `restricted`.
-- A registry's address, for installs or a release, has no trailing slash, such as `https://npm.pkg.github.com`, since the runs compare it as written to choose the run's token.
+- A release's registry address has no trailing slash, such as `https://registry.npmjs.org`, since the publish job compares it as written to choose provenance.
 - `runs-on-<target>`, such as `runs-on-linux-arm64`, takes the `runs-on` value as JSON, such as `'"ubuntu-24.04-arm"'` or a private repository's runner group and labels.
 - A public repository's runner must be one GitHub hosts, named by one label such as `"ubuntu-24.04"`: versions.yml fails the run before the other jobs start when it isn't.
 

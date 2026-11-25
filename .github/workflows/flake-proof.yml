@@ -66,14 +66,6 @@ on:
         description: Overrides the npm version versions.yml names, such as 11.20.0
         type: string
         default: ''
-      install-registry-url:
-        description: Overrides the registry versions.yml names for the scope's packages, such as https://npm.pkg.github.com
-        type: string
-        default: ''
-      install-scope:
-        description: Overrides the scope versions.yml names for that registry, such as @noldova-com
-        type: string
-        default: ''
       retention-days:
         description: Overrides the days versions.yml keeps the runs' logs and reports, 1 to 90
         type: string
@@ -118,8 +110,6 @@ jobs:
       targets: ${{ inputs.targets }}
       node-version: ${{ inputs.node-version }}
       npm-version: ${{ inputs.npm-version }}
-      install-registry-url: ${{ inputs.install-registry-url }}
-      install-scope: ${{ inputs.install-scope }}
       retention-days: ${{ inputs.retention-days }}
       runs-on-linux-x64: ${{ inputs.runs-on-linux-x64 }}
       runs-on-linux-arm64: ${{ inputs.runs-on-linux-arm64 }}
@@ -194,7 +184,6 @@ jobs:
     timeout-minutes: ${{ fromJSON(inputs.timeout-minutes) }}
     permissions:
       contents: read
-      packages: read
     strategy:
       fail-fast: false
       matrix:
@@ -214,8 +203,6 @@ jobs:
         with:
           node-version: ${{ needs.versions.outputs.node-version }}
           package-manager-cache: false
-          registry-url: ${{ needs.versions.outputs.install-registry-url }}
-          scope: ${{ needs.versions.outputs.install-scope }}
 
       - name: Verify the toolchain
         env:
@@ -244,8 +231,6 @@ jobs:
             }'
 
       - name: Install the dependencies
-        env:
-          NODE_AUTH_TOKEN: ${{ needs.versions.outputs.install-registry-url == 'https://npm.pkg.github.com' && github.token || '' }}
         run: |
           npm ci --no-audit --no-fund
           for script in preinstall install postinstall prepare; do
@@ -253,14 +238,11 @@ jobs:
           done
 
       - name: Build the packages
-        env:
-          NODE_AUTH_TOKEN: ${{ needs.versions.outputs.install-registry-url == 'https://npm.pkg.github.com' && github.token || '' }}
         run: npm run build
 
       - name: Prepare the tests
         if: inputs.prepare != ''
         env:
-          NODE_AUTH_TOKEN: ${{ needs.versions.outputs.install-registry-url == 'https://npm.pkg.github.com' && github.token || '' }}
           PREPARE: ${{ inputs.prepare }}
         run: |
           set -euo pipefail
