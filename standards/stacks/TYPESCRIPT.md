@@ -13,7 +13,8 @@ It adds to [CODE.md](../CODE.md), [TESTING.md](../TESTING.md) and [SECURITY.md](
 - Inside a [boundary](../CODE.md#failures), use no `typeof`, `instanceof`, `Array.isArray` or null guards on declared types, and never a non-null assertion for an invariant.
 - Where code checks a value's type or absence, it calls the checks `@noldova/context.core` adds to `Object` and `String`, never `typeof`, `=== undefined`, `=== null` or their negations written out: `Object.isUndefined`, `isNull`, `isNullOrUndefined`, `isObject`, `isPlainObject`, `isFunction`, `isNumber`, `isString`, `isBigInt`, `isBoolean` and `isSymbol`, and `String.isNullOrEmpty` and `isNullOrWhitespace`.
   A package that calls them imports `@noldova/context.core` and depends on it.
-  Three places write the checks out: `@noldova/context.core` itself, which defines them; a repository's root scripts, which run before the install and import nothing; and code that runs in one process beside another copy of `@noldova/context.core`, such as a tool's test-run entry points beside the checkout's own, since the checks can be defined only once in a process; each such file says so at its top.
+  Three places write the checks out: `@noldova/context.core` itself, which defines them; a repository's root scripts, which run before the install and import nothing; and code that runs in one process beside another copy of `@noldova/context.core`, such as a tool's test-run entry points beside the checkout's own copy, since the checks can be defined only once in a process.
+  Each such file says why at its top.
   A comparison with a sentinel of the code's own, such as a private symbol, stays a comparison.
   Existing code moves to the checks when a file is touched.
 - `undefined` means absent; `null` means deliberately set to nothing; nothing is `T | null | undefined`.
