@@ -204,6 +204,28 @@ jobs:
           node-version: ${{ needs.versions.outputs.node-version }}
           package-manager-cache: false
 
+      - name: Move npm's temporary files and cache off the system disk
+        if: runner.os == 'Windows' && runner.environment == 'github-hosted'
+        env:
+          MSYS_NO_PATHCONV: '1'
+        run: |
+          set -euo pipefail
+          if [ "$RUNNER_ARCH" = X64 ]; then
+            root="$RUNNER_TEMP"
+          else
+            vhd="$RUNNER_TEMP\dev-drive.vhdx"
+            script="$RUNNER_TEMP\dev-drive.txt"
+            printf '%s\r\n' "create vdisk file=\"$vhd\" maximum=20480 type=expandable" "select vdisk file=\"$vhd\"" 'attach vdisk' 'convert gpt' 'create partition primary' 'assign letter=R' > "$script"
+            diskpart /s "$script"
+            echo Y | format.com R: /DevDrv /Q /V:DevDrive /Y
+            fsutil devdrv query R:
+            root='R:'
+          fi
+          tmp="$root\tmp"
+          cache="$root\npm-cache"
+          mkdir -p "$tmp" "$cache"
+          printf '%s\n' "TEMP=$tmp" "TMP=$tmp" "npm_config_cache=$cache" >> "$GITHUB_ENV"
+
       - name: Verify the toolchain
         env:
           NODE_VERSION: ${{ needs.versions.outputs.node-version }}
