@@ -412,7 +412,7 @@ jobs:
           missing=0
           for manifest in $(git ls-files -- ':(glob)src/**/package.json' ':(exclude,glob)src/**/tests/**'); do
             name=$(node -p 'require(require("node:path").resolve(process.argv[1])).name' "$manifest")
-            archive="_packages/$(echo "${name#@}" | tr / -)-$RELEASE_VERSION.tgz"
+            archive="_build/packages/$(echo "${name#@}" | tr / -)-$RELEASE_VERSION.tgz"
             listing=$(tar -tzf "$archive" 2> /dev/null || true)
             for pair in "windowsAddons win32-x64 win32-arm64" "posixAddons linux-x64 linux-arm64 darwin-x64 darwin-arm64"; do
               read -r key targets <<< "$pair"
@@ -429,13 +429,13 @@ jobs:
           test "$missing" -eq 0
 
       - name: Check the archives
-        run: pipelines archive _packages "$RELEASE_VERSION" "$RELEASE_COMMIT" "$RELEASE_SCOPE"
+        run: pipelines archive _build/packages "$RELEASE_VERSION" "$RELEASE_COMMIT" "$RELEASE_SCOPE"
 
       - name: Keep the archives for releasing
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: archives
-          path: _packages/*.tgz
+          path: _build/packages/*.tgz
           if-no-files-found: error
           retention-days: 35
 
@@ -479,7 +479,7 @@ jobs:
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: archives
-          path: _packages
+          path: _build/packages
 
       - name: Install the pipelines tool
         env:
@@ -492,4 +492,4 @@ jobs:
         env:
           npm_config_provenance: ${{ !github.event.repository.private && needs.versions.outputs.publish-registry-url == 'https://registry.npmjs.org' }}
           NODE_AUTH_TOKEN: ${{ secrets.PUBLISH_TOKEN || secrets.registry-token || '' }}
-        run: pipelines publish _packages "$RELEASE_VERSION" "$RELEASE_COMMIT" "$RELEASE_SCOPE" "$RELEASE_REGISTRY_URL" "$RELEASE_ACCESS"
+        run: pipelines publish _build/packages "$RELEASE_VERSION" "$RELEASE_COMMIT" "$RELEASE_SCOPE" "$RELEASE_REGISTRY_URL" "$RELEASE_ACCESS"

@@ -185,14 +185,14 @@ tests/services/snapshot-tracker.test.ts
 - Each package has its own `package.json` beside its source, with its name, version and entry points.
   Its name is the scope followed by its folder's name after `noldova.`: `noldova.context.text` is `@noldova/context.text`.
   Every package takes the `@noldova/` scope on npm's registry.
-- The project's own scripts build the packages: each is built into `_build/packages/<folder name>`, packed with `npm pack` into `_packages/`, and installed from there with `npm install --no-save`, so a library's or a test's own packages never enter its manifest or lockfile.
-  An app built on Desktop instead pins its own repository's packages in its one lock, as `file:` archives from `_packages/`, so that one lock covers the whole app, and publishes none of them; a library repository and every test keep installing with `--no-save`, outside the lock.
+- The project's own scripts build the packages: each is built into `_build/node/<folder name>`, packed with `npm pack` into `_build/packages/`, and installed from there with `npm install --no-save`, so a library's or a test's own packages never enter its manifest or lockfile.
+  An app built on Desktop instead pins its own repository's packages in its one lock, as `file:` archives from `_build/packages/`, so that one lock covers the whole app, and publishes none of them; a library repository and every test keep installing with `--no-save`, outside the lock.
   No third-party build or packaging tool does this.
 - A package's public test helpers live in `src/testing/`, beside the concept folders of `src/`, organized in the same concept categories.
   Only the package's testing entry, `src/api/testing.ts`, reaches them, so an app's bundle never takes them, and no other entry imports them or the test runner.
 - A package that needs a compiler beyond `tsc`, such as Angular's compiler for components, keeps its own build script beside it, which the shared build calls in place of `tsc`.
 - Everything that uses a package, other packages, apps and tests, installs its packed `.tgz`, exactly as an outside user would; never a path alias or a relative import into another package's source.
-- `_build/` and `_packages/`, the repository's own packed output, are not committed.
+- `_build/`, which holds everything a build writes, the packed archives included, is not committed.
   The lockfile is committed, and it pins every third-party package, so every install gets the same third-party code.
 - A repository that uses another repository's packages installs their published versions from the registry they are published to at exact pins, like any external dependency; never committed `.tgz` copies, fetched files or `file:` paths.
 
