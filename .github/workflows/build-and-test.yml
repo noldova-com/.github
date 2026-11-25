@@ -346,7 +346,7 @@ jobs:
           tool="$PIPELINES_TOOL"
           if [ "$TOOL_FROM_SOURCE" = true ]; then
             mkdir "$RUNNER_TEMP/pipelines-archives"
-            cp _packages/*.tgz "$RUNNER_TEMP/pipelines-archives/"
+            cp _build/packages/*.tgz "$RUNNER_TEMP/pipelines-archives/"
             tool="$(echo "$RUNNER_TEMP"/pipelines-archives/*.tgz)"
           fi
           npm install --prefix "$RUNNER_TEMP/pipelines-tool" --registry https://registry.npmjs.org/ --no-audit --no-fund $tool
@@ -440,13 +440,13 @@ jobs:
           GIT_CONFIG_COUNT: '1'
           GIT_CONFIG_KEY_0: core.longpaths
           GIT_CONFIG_VALUE_0: 'true'
-        run: pipelines reproducible _packages
+        run: pipelines reproducible _build/packages
 
       - name: Check the archives as the release does
         if: inputs.publishes && (!matrix.part || matrix.part == 1)
         env:
           RELEASE_SCOPE: ${{ needs.versions.outputs.publish-scope }}
-        run: pipelines archive _packages "$(node -p 'require("./version.json").version')" "$(git rev-parse HEAD)" "$RELEASE_SCOPE"
+        run: pipelines archive _build/packages "$(node -p 'require("./version.json").version')" "$(git rev-parse HEAD)" "$RELEASE_SCOPE"
 
       - name: Report the temporary folder's drive after a failure
         if: failure() && runner.os == 'Windows' && runner.environment == 'github-hosted'
@@ -533,7 +533,7 @@ jobs:
           tool="$PIPELINES_TOOL"
           if [ "$TOOL_FROM_SOURCE" = true ]; then
             mkdir "$RUNNER_TEMP/pipelines-archives"
-            cp _packages/*.tgz "$RUNNER_TEMP/pipelines-archives/"
+            cp _build/packages/*.tgz "$RUNNER_TEMP/pipelines-archives/"
             tool="$(echo "$RUNNER_TEMP"/pipelines-archives/*.tgz)"
           fi
           npm install --prefix "$RUNNER_TEMP/pipelines-tool" --registry https://registry.npmjs.org/ --no-audit --no-fund $tool
@@ -623,7 +623,7 @@ jobs:
           tool="$PIPELINES_TOOL"
           if [ "$TOOL_FROM_SOURCE" = true ]; then
             mkdir "$RUNNER_TEMP/pipelines-archives"
-            cp _packages/*.tgz "$RUNNER_TEMP/pipelines-archives/"
+            cp _build/packages/*.tgz "$RUNNER_TEMP/pipelines-archives/"
             tool="$(echo "$RUNNER_TEMP"/pipelines-archives/*.tgz)"
           fi
           npm install --prefix "$RUNNER_TEMP/pipelines-tool" --registry https://registry.npmjs.org/ --no-audit --no-fund $tool
