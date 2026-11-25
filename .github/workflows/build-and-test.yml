@@ -46,7 +46,7 @@ on:
         type: boolean
         default: false
       end-to-end:
-        description: Runs the repository's npm run test:<name> in a Linux x64 job of its own, such as e2e, after npm run build and end-to-end-prepare, under a virtual display, inside a D-Bus session with an unlocked Secret Service
+        description: Runs the repository's npm run test:<name> in a job of its own on each of end-to-end-targets, Linux x64 by default, such as e2e, after npm run build and end-to-end-prepare; on Linux under a virtual display, inside a D-Bus session with an unlocked Secret Service
         type: string
         default: ''
       end-to-end-prepare:
@@ -54,9 +54,13 @@ on:
         type: string
         default: ''
       end-to-end-shards:
-        description: Splits the end-to-end test into parts, from 2 to 8, each a Linux x64 job of its own, such as 2; the repository's npm run test:<end-to-end> takes --shard=<part>/<parts>; it needs end-to-end
+        description: Splits the end-to-end test into parts, from 2 to 8, each a job of its own on each of end-to-end-targets, such as 2; the repository's npm run test:<end-to-end> takes --shard=<part>/<parts>; it needs end-to-end
         type: string
         default: ''
+      end-to-end-targets:
+        description: The targets the end-to-end test runs on, separated by spaces, such as 'linux-x64 windows-x64 macos-arm64', each one of targets, in a job of its own per target and part; Linux x64 alone by default
+        type: string
+        default: linux-x64
       end-to-end-report:
         description: A folder, relative to the checkout, that the end-to-end job keeps when the test fails or is cancelled, such as _build/e2e
         type: string
@@ -127,7 +131,7 @@ jobs:
   plan:
     name: Plan the parts
     needs: versions
-    if: inputs.shards != '' || inputs.separate-test != '' || inputs.shard-outputs != '' || inputs.separate-test-report != '' || inputs.end-to-end-shards != '' || inputs.test-targets != ''
+    if: inputs.shards != '' || inputs.separate-test != '' || inputs.shard-outputs != '' || inputs.separate-test-report != '' || inputs.end-to-end-shards != '' || inputs.end-to-end-targets != 'linux-x64' || inputs.test-targets != ''
     runs-on: ${{ fromJSON(needs.versions.outputs.runs-on-linux-x64) }}
     timeout-minutes: 5
     permissions: {}
@@ -135,6 +139,7 @@ jobs:
       targets: ${{ steps.plan.outputs.targets }}
       merges: ${{ steps.plan.outputs.merges }}
       end-to-end-parts: ${{ steps.plan.outputs.end-to-end-parts }}
+      end-to-end-runners: ${{ steps.plan.outputs.end-to-end-runners }}
     steps:
       - name: Split the targets into parts
         id: plan
@@ -146,6 +151,7 @@ jobs:
           SEPARATE_TEST_REPORT: ${{ inputs.separate-test-report }}
           END_TO_END: ${{ inputs.end-to-end }}
           END_TO_END_SHARDS: ${{ inputs.end-to-end-shards }}
+          END_TO_END_TARGETS: ${{ inputs.end-to-end-targets }}
           TEST_TARGETS: ${{ inputs.test-targets }}
         run: |
           set -euo pipefail
@@ -167,6 +173,10 @@ jobs:
           fi
           if [ -n "$END_TO_END_SHARDS" ] && [[ ! "$END_TO_END_SHARDS" =~ ^[2-8]$ ]]; then
             echo "::error::end-to-end-shards is the end-to-end test's parts, 2 to 8, not \"$END_TO_END_SHARDS\"."
+            exit 1
+          fi
+          if [ "$END_TO_END_TARGETS" != linux-x64 ] && [ -z "$END_TO_END" ]; then
+            echo "::error::end-to-end-targets names where the end-to-end test runs, so it needs end-to-end."
             exit 1
           fi
           declare -A parts=()
@@ -241,14 +251,52 @@ jobs:
             echo "merges=$merges" >> "$GITHUB_OUTPUT"
             echo "$merges"
           fi
-          if [ -n "$END_TO_END_SHARDS" ]; then
+          if [ -n "$END_TO_END" ] && { [ -n "$END_TO_END_SHARDS" ] || [ "$END_TO_END_TARGETS" != linux-x64 ]; }; then
+            # Each end-to-end job's one matrix value is its label, which GitHub shows after the job's name: the part alone, such as
+            # "1 of 2", for Linux x64 alone, as before end-to-end-targets, and otherwise the target's name, such as "Windows x64, 1 of 2".
+            # The runners map each label to its target.
+            declare -A named=()
+            rest="$TARGETS"
+            while [[ "$rest" =~ $entry ]]; do
+              named[${BASH_REMATCH[1]}]=${BASH_REMATCH[2]}
+              rest=${BASH_REMATCH[3]}
+            done
+            read -ra end_to_end_targets <<< "$END_TO_END_TARGETS"
+            if [ "${#end_to_end_targets[@]}" -eq 0 ]; then
+              echo "::error::end-to-end-targets names no target."
+              exit 1
+            fi
+            declare -A chosen=()
+            count=${END_TO_END_SHARDS:-1}
             entries=()
-            for ((part = 1; part <= END_TO_END_SHARDS; part++)); do
-              entries+=("{\"part\":\"$part of $END_TO_END_SHARDS\"}")
+            runners=()
+            for target in "${end_to_end_targets[@]}"; do
+              if [ -z "${named[$target]:-}" ]; then
+                echo "::error::end-to-end-targets names $target, which targets doesn't list."
+                exit 1
+              fi
+              if [ -n "${chosen[$target]:-}" ]; then
+                echo "::error::end-to-end-targets names $target twice."
+                exit 1
+              fi
+              chosen[$target]=1
+              for ((part = 1; part <= count; part++)); do
+                label=${named[$target]}
+                if [ "$END_TO_END_TARGETS" = linux-x64 ]; then
+                  label="$part of $count"
+                elif [ "$count" -gt 1 ]; then
+                  label="$label, $part of $count"
+                fi
+                entries+=("{\"part\":\"$label\"}")
+                runners+=("\"$label\":\"$target\"")
+              done
             done
             end_to_end_parts="[$(IFS=,; echo "${entries[*]}")]"
+            end_to_end_runners="{$(IFS=,; echo "${runners[*]}")}"
             echo "end-to-end-parts=$end_to_end_parts" >> "$GITHUB_OUTPUT"
+            echo "end-to-end-runners=$end_to_end_runners" >> "$GITHUB_OUTPUT"
             echo "$end_to_end_parts"
+            echo "$end_to_end_runners"
           fi
 
   build-and-test:
@@ -275,7 +323,8 @@ jobs:
           node-version: ${{ needs.versions.outputs.node-version }}
           package-manager-cache: false
 
-      - name: Move npm's temporary files and cache off the system disk
+      - &npm-off-system-disk
+        name: Move npm's temporary files and cache off the system disk
         if: runner.os == 'Windows' && runner.environment == 'github-hosted'
         env:
           MSYS_NO_PATHCONV: '1'
@@ -583,15 +632,15 @@ jobs:
     # A plain name, so a skipped job still shows it; a split test's jobs show their part after it, such as "End-to-end test (1 of 2)".
     name: End-to-end test
     needs: [versions, plan]
-    if: ${{ !cancelled() && inputs.end-to-end != '' && needs.versions.result == 'success' && (inputs.end-to-end-shards == '' || needs.plan.result == 'success') }}
-    runs-on: ${{ fromJSON(needs.versions.outputs.runs-on-linux-x64) }}
+    if: ${{ !cancelled() && inputs.end-to-end != '' && needs.versions.result == 'success' && ((inputs.end-to-end-shards == '' && inputs.end-to-end-targets == 'linux-x64') || needs.plan.result == 'success') }}
+    runs-on: ${{ fromJSON(needs.versions.outputs[format('runs-on-{0}', fromJSON(needs.plan.outputs.end-to-end-runners || '{}')[matrix.part] || 'linux-x64')]) }}
     timeout-minutes: ${{ inputs.timeout-minutes }}
     permissions:
       contents: read
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJSON(inputs.end-to-end-shards != '' && needs.plan.outputs.end-to-end-parts || '[{"part":""}]') }}
+        include: ${{ fromJSON(needs.plan.outputs.end-to-end-parts || '[{"part":""}]') }}
     steps:
       - name: Note when the job started
         run: echo "JOB_STARTED=$(date +%s)" >> "$GITHUB_ENV"
@@ -606,6 +655,8 @@ jobs:
         with:
           node-version: ${{ needs.versions.outputs.node-version }}
           package-manager-cache: false
+
+      - *npm-off-system-disk
 
       - *browser-folder
 
@@ -642,7 +693,7 @@ jobs:
         run: bash -euo pipefail -c "$PREPARE"
 
       - name: Install the virtual display, the session bus and the Secret Service on GitHub's runner
-        if: runner.environment == 'github-hosted'
+        if: runner.os == 'Linux' && runner.environment == 'github-hosted'
         timeout-minutes: 10
         run: |
           apt=(sudo DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=600 -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30)
@@ -654,7 +705,7 @@ jobs:
           fi
 
       - name: Allow unprivileged user namespaces, which Chromium's sandbox needs
-        if: inputs.unprivileged-user-namespaces
+        if: inputs.unprivileged-user-namespaces && runner.os == 'Linux'
         timeout-minutes: 1
         env:
           HOSTED: ${{ runner.environment == 'github-hosted' }}
@@ -675,28 +726,63 @@ jobs:
           PART: ${{ matrix.part }}
           JOB_MINUTES: ${{ inputs.timeout-minutes }}
         run: |
-          # A split test's part, such as "1 of 2", becomes --shard=1/2, and its report's name carries the part.
+          # A split test's part, such as "1 of 2" or "Windows x64, 1 of 2", becomes --shard=1/2, and its report's name carries the
+          # label: the part's number alone for Linux x64 alone, as before end-to-end-targets, such as end-to-end-report-1-1, and
+          # otherwise the label in lowercase with dashes, such as end-to-end-report-windows-x64-1-of-2-1.
           SHARD=
           report="end-to-end-report-$GITHUB_RUN_ATTEMPT"
-          if [ -n "$PART" ]; then
-            SHARD="-- --shard=${PART%% of *}/${PART##* of }"
-            report="end-to-end-report-${PART%% of *}-$GITHUB_RUN_ATTEMPT"
+          if [[ "$PART" =~ ([0-9]+)\ of\ ([0-9]+)$ ]]; then
+            SHARD="-- --shard=${BASH_REMATCH[1]}/${BASH_REMATCH[2]}"
+          fi
+          if [[ "$PART" =~ ^([0-9]+)\ of\ [0-9]+$ ]]; then
+            report="end-to-end-report-${BASH_REMATCH[1]}-$GITHUB_RUN_ATTEMPT"
+          elif [ -n "$PART" ]; then
+            slug=$(echo "$PART" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-')
+            report="end-to-end-report-${slug%-}-$GITHUB_RUN_ATTEMPT"
           fi
           export SHARD
           echo "report=$report" >> "$GITHUB_OUTPUT"
           echo "display-log=${report/end-to-end-report/virtual-display-log}" >> "$GITHUB_OUTPUT"
-          for program in Xvfb xauth dbus-daemon gdbus gnome-keyring-daemon; do
-            if ! command -v "$program" >/dev/null; then
-              echo "::error::This runner has no $program, which the end-to-end test runs under."
-              exit 1
-            fi
-          done
           # The test stops three minutes before the job's timeout, so a hung test fails this step and the report is still kept.
           limit=$(( JOB_MINUTES * 60 - ($(date +%s) - JOB_STARTED) - 180 ))
           if [ "$limit" -lt 60 ]; then
             echo "::error::The job's timeout leaves the end-to-end test $limit seconds once three minutes are kept for its report; raise timeout-minutes."
             exit 1
           fi
+          if [ "$RUNNER_OS" != Linux ]; then
+            # Windows and macOS runners have a desktop session of their own, so the test runs in it. Node stops the test's whole
+            # process tree at the limit, as macOS's shell has no timeout command: taskkill /T on Windows, and elsewhere the process
+            # group the test leads, TERM and then KILL 30 seconds later; it exits 124 when it stopped the test.
+            echo "The end-to-end test may run for $limit seconds."
+            status=0
+            node -e '
+              const { spawn, execFileSync } = require("node:child_process");
+              const [limit, ...command] = process.argv.slice(1);
+              const windows = process.platform === "win32";
+              const test = spawn(command[0], command.slice(1), { stdio: "inherit", shell: windows, detached: !windows });
+              let stopped = false;
+              const stop = signal => windows ? execFileSync("taskkill", ["/T", "/F", "/PID", String(test.pid)], { stdio: "ignore" }) : process.kill(-test.pid, signal);
+              const timer = setTimeout(() => {
+                stopped = true;
+                try { stop("SIGTERM"); } catch {}
+                setTimeout(() => { try { stop("SIGKILL"); } catch {} }, 30000).unref();
+              }, Number(limit) * 1000);
+              test.on("exit", (code, signal) => {
+                clearTimeout(timer);
+                process.exit(stopped ? 124 : code ?? (signal === null ? 1 : 128));
+              });
+            ' "$limit" npm run "test:$END_TO_END" $SHARD || status=$?
+            if [ "$status" = 124 ]; then
+              echo "::error::The end-to-end test ran past its $limit seconds and was stopped, three minutes before the job's timeout."
+            fi
+            exit "$status"
+          fi
+          for program in Xvfb xauth dbus-daemon gdbus gnome-keyring-daemon; do
+            if ! command -v "$program" >/dev/null; then
+              echo "::error::This runner has no $program, which the end-to-end test runs under."
+              exit 1
+            fi
+          done
           mkdir -p "$RUNNER_TEMP/keyring-data/keyrings"
           mkdir -m 700 "$RUNNER_TEMP/keyring-control"
           printf login > "$RUNNER_TEMP/keyring-data/keyrings/default"
@@ -803,7 +889,7 @@ jobs:
           SEPARATE_RESULT: ${{ needs.separate-test.result }}
           MERGE_RESULT: ${{ needs.merge-parts.result }}
           END_TO_END_RESULT: ${{ needs.end-to-end.result }}
-          PLANNED: ${{ inputs.shards != '' || inputs.separate-test != '' || inputs.shard-outputs != '' || inputs.separate-test-report != '' || inputs.end-to-end-shards != '' || inputs.test-targets != '' }}
+          PLANNED: ${{ inputs.shards != '' || inputs.separate-test != '' || inputs.shard-outputs != '' || inputs.separate-test-report != '' || inputs.end-to-end-shards != '' || inputs.end-to-end-targets != 'linux-x64' || inputs.test-targets != '' }}
           SEPARATE: ${{ inputs.separate-test != '' }}
           MERGED: ${{ inputs.shard-outputs != '' }}
           END_TO_END: ${{ inputs.end-to-end != '' }}
