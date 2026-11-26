@@ -44,7 +44,7 @@ Production behavior belongs to classes representing named concepts.
   Structured results use named classes; polymorphic results use meaningful base or abstract classes.
   Do not return shape aliases, anonymous objects, tuples or property bags, except at the wire boundary.
 - Structured values are named classes everywhere, not only in results: a field, local, parameter or type argument never takes an anonymous object type, such as `{ value: T }`, or a tuple, except at the wire boundary.
-  A value typed as an interface is an instance of a named class that implements it, never an object literal, except at the wire boundary.
+  A value typed as one of our interfaces is an instance of a named class that implements it, never an object literal, except at the wire boundary; options that a platform or an outside library defines, such as an event listener's options, may stay literals.
   A value that may be missing uses the language's own absent value or a named sentinel, never a wrapper object.
   Existing code moves to named classes when a file is touched.
 - Keep public APIs small and intentional; internal mechanics stay private.
