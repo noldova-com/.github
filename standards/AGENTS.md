@@ -18,7 +18,7 @@ How the team works, such as who decides, how issues and pull requests move, and 
 
 [CONTEXT](https://github.com/noldova-com/context) is Noldova's base framework, and everything we build is based on it.
 
-- Code uses CONTEXT the way a C# project uses .NET: wherever CONTEXT has the type or helper, such as its collections, text, exceptions and checks, it comes before the language's own form.
+- Code uses CONTEXT the way a C# project uses .NET: wherever CONTEXT has the type or helper, such as its collections, text, exceptions and checks, it comes before the host's form, as [CODE.md](CODE.md#ownership) orders it.
 - A general capability a project needs, one that isn't the product's own behavior, comes from CONTEXT; when CONTEXT lacks it, it is added to CONTEXT as a package, as [CODE.md](CODE.md#ownership) places it.
 - An outside package comes in only as [SECURITY.md](SECURITY.md#dependencies) says.
 - A project built on another framework, such as Electron or Angular, keeps it unless a maintainer decides to move it, and uses CONTEXT for what CONTEXT provides.
