@@ -105,6 +105,8 @@ src/noldova.example.shell/
   API declarations mirror enum values exactly, and tests keep independent expected literals.
 - Concept folders and file names use lowercase kebab-case, and a file name preserves the words of its type's name; an interface's `I` is one of its words (`i-provider-adapter.ts`).
   Product names keep their one-word spelling: `GitHubApi` lives in `github-api.ts`.
+- A source file declares one type and is named after it, as a C# project keeps one type to a file.
+  Entry points (`api/index.ts`), `resources.ts` and declaration files are exempt, and so are tests, whose files may hold the small doubles they use.
 - A final role word takes a dot: `node`, `parser`, `lexer`, `reader`, `validator`, `exception` or `service` (`argument.exception.ts`, `source.reader.ts`, `binary-search.service.ts`).
   Other words stay kebab-case (`snapshot-tracker.ts`); a single-word type keeps its name (`exception.ts`); never add `.model`, `.enum` or `.interface`.
 - Exception class names end in `Exception` (`ArgumentException`).
