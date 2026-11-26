@@ -40,11 +40,11 @@ Production behavior belongs to classes representing named concepts.
 - Add behavior to the concrete type instead of `if` or `switch` ladders over kind tags.
   A dispatcher is permitted only at a genuine runtime-dynamic boundary (parsing an external tool's events, decoding wire messages), and is narrow, named and tested as such.
 - Additions to existing or global types live only in foundation packages, each adding the members of its own subject, reviewed and tested there.
-- Methods return concrete classes, primitives, enums or concrete runtime collections.
-  Structured results use named classes; polymorphic results use meaningful base or abstract classes.
-  Interfaces describe consumed or implemented contracts, not results.
-  Do not return interfaces, shape aliases, anonymous objects, tuples or property bags, except at the wire boundary.
+- Methods return concrete classes, primitives, enums or concrete runtime collections, or an interface that a named class implements, such as a read-only collection interface over a concrete collection.
+  Structured results use named classes; polymorphic results use meaningful base or abstract classes, or an interface those classes implement.
+  Do not return shape aliases, anonymous objects, tuples or property bags, except at the wire boundary.
 - Structured values are named classes everywhere, not only in results: a field, local, parameter or type argument never takes an anonymous object type, such as `{ value: T }`, or a tuple, except at the wire boundary.
+  A value typed as one of our interfaces is an instance of a named class that implements it, never an object literal, except at the wire boundary; options that a platform or an outside library defines, such as an event listener's options, may stay literals.
   A value that may be missing uses the language's own absent value or a named sentinel, never a wrapper object.
   Existing code moves to named classes when a file is touched.
 - Keep public APIs small and intentional; internal mechanics stay private.
@@ -82,7 +82,7 @@ Review speed and memory from the first line.
 
 ## Canonical values
 
-- Each package keeps its canonical values in one owner: messages, labels, protocol tokens, file extensions, environment and command names, regular expressions, formatting values and policy limits.
+- Each package keeps its canonical values in one owner: messages, labels, protocol tokens, file extensions, environment and command names, identifiers (command ids and setting, condition and style names), key chords, built-in data tables such as key bindings and language lists, regular expressions, formatting values and policy limits.
 - Self-evident local algorithm literals, such as incrementing by `1`, stay inline.
   Timeouts and size limits always have names.
 - Semantic alternatives use enums or concrete value objects; enums own their values.
