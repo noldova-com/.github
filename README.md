@@ -30,7 +30,7 @@ name: PR
 on:
   pull_request:
     branches: [main]
-    types: [opened, edited, synchronize, reopened, ready_for_review]
+    types: [opened, edited, synchronize, reopened]
 
 permissions:
   issues: read
@@ -59,7 +59,7 @@ name: Build and test
 on:
   pull_request:
     branches: [main]
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, synchronize, reopened]
   push:
     branches: [main]
 
