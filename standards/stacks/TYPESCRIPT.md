@@ -116,6 +116,7 @@ src/noldova.example.shell/
 - Two-space indentation and semicolons.
 - Handwritten TypeScript prefers 160 columns as a soft signal, not a gate; a cohesive signature, indivisible string, pattern, URL or test input may exceed it.
 - Omit braces around a control-flow body of exactly one statement; use them for several, and keep them where leaving them out would attach a following `else` to a nested `if`.
+- One blank line comes before a `return` that follows a block or another statement; a `return` that is its body's only statement has none.
 - Name a single untyped arrow parameter `t` and omit its parentheses: `values.filter(t => t.isValid)`.
   Keep parentheses for zero or several parameters, type annotations, destructuring, defaults or rest parameters.
 - Multiline parameter and argument lists have no trailing comma; the closing parenthesis follows the last item:
