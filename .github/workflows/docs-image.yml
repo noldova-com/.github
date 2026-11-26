@@ -382,6 +382,52 @@ jobs:
           awk -v sq="'" -f "$RUNNER_TEMP/check-logs.awk" "${files[@]}"
           echo "The nginx settings keep no request log and log only errors at the emerg level."
 
+      - name: Check the headers
+        if: inputs.nginx == ''
+        run: |
+          set -euo pipefail
+          if ! command -v docker > /dev/null; then
+            echo "::error::Checking the shared nginx settings' headers needs docker on the runner."
+            exit 1
+          fi
+          site="$RUNNER_TEMP/docs-check"
+          mkdir -p "$site/assets"
+          echo '<!doctype html><title>Check</title>' > "$site/index.html"
+          echo 'export {};' > "$site/assets/main-ABCD1234.js"
+          chmod -R a+rX "$site"
+          settings="$RUNNER_TEMP/docs-layer/etc/nginx"
+          container=$(docker run --detach --rm --read-only --tmpfs /tmp --publish 127.0.0.1::8080 \
+            --volume "$settings/nginx.conf:/etc/nginx/nginx.conf:ro" --volume "$settings/headers.conf:/etc/nginx/headers.conf:ro" \
+            --volume "$site:/usr/share/nginx/html:ro" "$BASE_IMAGE")
+          trap 'docker rm --force "$container" > /dev/null' EXIT
+          address="http://$(docker port "$container" 8080/tcp | head -n 1)"
+          curl --fail --silent --show-error --retry 20 --retry-delay 1 --retry-all-errors --output /dev/null "$address/healthz"
+          failed=0
+          expect() {
+            local name=$1 status=$2 cache=$3
+            shift 3
+            local headers
+            headers=$(curl --silent --show-error --output /dev/null --dump-header - "$@")
+            local got
+            got=$(printf '%s' "$headers" | head -n 1 | cut -d ' ' -f 2)
+            local control
+            control=$(printf '%s' "$headers" | grep -i '^cache-control:' | cut -d ' ' -f 2- | tr -d '\r' || true)
+            if [ "$got" != "$status" ] || [ "$control" != "$cache" ]; then
+              echo "::error::$name answered $got with Cache-Control \"$control\", not $status with \"$cache\"."
+              failed=1
+            else
+              echo "$name answers $got with Cache-Control \"$control\"."
+            fi
+          }
+          immutable='public, max-age=31536000, immutable'
+          expect 'A found hashed file' 200 "$immutable" "$address/assets/main-ABCD1234.js"
+          etag=$(curl --silent --show-error --output /dev/null --dump-header - "$address/assets/main-ABCD1234.js" | grep -i '^etag:' | cut -d ' ' -f 2- | tr -d '\r')
+          expect 'A found hashed file, revalidated' 304 "$immutable" --header "If-None-Match: $etag" "$address/assets/main-ABCD1234.js"
+          expect 'A missing hashed file' 404 no-store "$address/assets/main-EFGH5678.js"
+          expect 'A missing plain path' 404 no-store "$address/missing"
+          expect 'A page' 200 no-cache "$address/"
+          exit "$failed"
+
       - name: Push the image
         id: push
         env:
