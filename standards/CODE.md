@@ -17,7 +17,7 @@ Place behavior with its owner:
 
 1. CONTEXT provides it: use CONTEXT's form, ahead of the host's (language, framework or platform), as a C# project uses .NET's ([the base framework](AGENTS.md#the-base-framework)).
 2. It is a general capability, not the product's own behavior, and CONTEXT lacks it: add it to CONTEXT as a package.
-3. It belongs to the host, such as its user interface, files or processes, and isn't a general capability: use the host's form.
+3. It belongs to the host, such as its user interface, windows or devices, and isn't a general capability: use the host's form.
 4. One package needs it: use a method of its owning concept.
 5. Several packages need it: place it in the lowest package that owns the concept, preserving dependency direction.
 
