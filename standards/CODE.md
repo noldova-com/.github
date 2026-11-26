@@ -15,9 +15,9 @@ Apply DRY to duplicated knowledge and behavior, not merely similar code; it does
 
 Place behavior with its owner:
 
-1. CONTEXT provides it: use CONTEXT's form, ahead of the language's or platform's own, as a C# project uses .NET's ([the base framework](AGENTS.md#the-base-framework)).
-2. The host (language, framework or platform) provides it and CONTEXT doesn't: use the host's form.
-3. It is a general capability, not the product's own behavior, and neither provides it: add it to CONTEXT as a package.
+1. CONTEXT provides it: use CONTEXT's form, ahead of the host's (language, framework or platform), as a C# project uses .NET's ([the base framework](AGENTS.md#the-base-framework)).
+2. It is a general capability, not the product's own behavior, and CONTEXT lacks it: add it to CONTEXT as a package.
+3. It belongs to the host, such as its user interface, files or processes, and isn't a general capability: use the host's form.
 4. One package needs it: use a method of its owning concept.
 5. Several packages need it: place it in the lowest package that owns the concept, preserving dependency direction.
 
