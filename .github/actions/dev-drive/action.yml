@@ -2,7 +2,7 @@ name: Move the checkout, npm's temporary files and its cache off the system disk
 description: >-
   On GitHub's Windows runners, keeps what npm ci writes off the system disk C:, before the checkout.
   On Windows x64, whose checkout is already on D:, it moves TEMP, TMP and npm's cache to the runner's temporary folder there.
-  On Windows arm64, it makes a Dev Drive R: and turns the checkout folder into a junction to R:\checkout, so the checkout, TEMP, TMP and npm's cache all go on it.
+  On Windows arm64, it makes a Dev Drive R: and puts TEMP, TMP and npm's cache on it, for a checkout the workflow clones onto it.
   Elsewhere, and on a self-hosted runner, it does nothing.
 runs:
   using: composite
@@ -18,15 +18,12 @@ runs:
         if [ "$RUNNER_ARCH" = X64 ]; then
           root="$RUNNER_TEMP"
         else
-          rmdir "$GITHUB_WORKSPACE"
           vhd="$RUNNER_TEMP\dev-drive.vhdx"
           script="$RUNNER_TEMP\dev-drive.txt"
           printf '%s\r\n' "create vdisk file=\"$vhd\" maximum=40960 type=expandable" "select vdisk file=\"$vhd\"" 'attach vdisk' 'convert gpt' 'create partition primary' 'assign letter=R' > "$script"
           diskpart /s "$script"
           echo Y | format.com R: /DevDrv /Q /V:DevDrive /Y
           fsutil devdrv query R:
-          mkdir 'R:\checkout'
-          cmd /c mklink /J "$GITHUB_WORKSPACE" 'R:\checkout'
           root='R:'
         fi
         tmp="$root\tmp"
