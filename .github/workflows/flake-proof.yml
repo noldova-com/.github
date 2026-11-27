@@ -190,6 +190,7 @@ jobs:
         include: ${{ fromJSON(needs.plan.outputs.matrix) }}
     defaults:
       run:
+        shell: bash
         working-directory: ${{ matrix.target == 'windows-arm64' && 'R:\checkout' || github.workspace }}
     steps:
       - name: Note when the job started

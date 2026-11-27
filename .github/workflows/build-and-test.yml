@@ -313,6 +313,7 @@ jobs:
         include: ${{ fromJSON(needs.plan.outputs.targets || needs.versions.outputs.targets) }}
     defaults:
       run:
+        shell: bash
         working-directory: ${{ matrix.target == 'windows-arm64' && 'R:\checkout' || github.workspace }}
     steps:
       - &npm-off-system-disk
