@@ -188,14 +188,31 @@ jobs:
       fail-fast: false
       matrix:
         include: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    defaults:
+      run:
+        working-directory: ${{ matrix.target == 'windows-arm64' && 'R:\checkout' || github.workspace }}
     steps:
       - name: Note when the job started
+        working-directory: ${{ runner.temp }}
         run: echo "JOB_STARTED=$(date +%s)" >> "$GITHUB_ENV"
 
       - name: Move the checkout, npm's temporary files and its cache off the system disk
-        uses: noldova-com/.github/.github/actions/dev-drive@e7a71ef2ae6f0bc439380daf5542d324f5c7488f
+        uses: noldova-com/.github/.github/actions/dev-drive@2faf4a1f2abad0ef2dd84234c62d11741b00dd41
+
+      - name: Check out the tested revision on the Dev Drive
+        if: matrix.target == 'windows-arm64'
+        working-directory: ${{ runner.temp }}
+        env:
+          REF: ${{ inputs.ref || github.sha }}
+        run: |
+          git init -q R:/checkout
+          git -C R:/checkout remote add origin "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY"
+          git -C R:/checkout fetch -q --depth 1 --no-tags origin "$REF"
+          git -C R:/checkout checkout -q --detach FETCH_HEAD
+          git -C R:/checkout log -1 --format=%H
 
       - name: Check out the tested revision
+        if: matrix.target != 'windows-arm64'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.ref }}
@@ -693,7 +710,7 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: flake-proof-${{ matrix.target }}-${{ matrix.job }}-${{ github.run_attempt }}
-          path: _build/flake-proof/
+          path: ${{ matrix.target == 'windows-arm64' && 'R:/checkout/_build/flake-proof/' || '_build/flake-proof/' }}
           include-hidden-files: true
           retention-days: ${{ needs.versions.outputs.retention-days }}
           if-no-files-found: ignore
