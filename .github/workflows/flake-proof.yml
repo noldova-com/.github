@@ -193,7 +193,7 @@ jobs:
         run: echo "JOB_STARTED=$(date +%s)" >> "$GITHUB_ENV"
 
       - name: Move the checkout, npm's temporary files and its cache off the system disk
-        uses: noldova-com/.github/.github/actions/dev-drive@446e661121be38b26bc76848234e03172226d128
+        uses: noldova-com/.github/.github/actions/dev-drive@2df0359627b44b5aaa68fe96185f7def837a3674
 
       - name: Check out the tested revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
