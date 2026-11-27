@@ -1,0 +1,49 @@
+name: Move the checkout, npm's temporary files and its cache off the system disk
+description: >-
+  On GitHub's Windows runners, keeps what npm ci writes off the system disk C:, before the checkout.
+  On Windows x64, whose checkout is already on D:, it moves TEMP, TMP and npm's cache to the runner's temporary folder there.
+  On Windows arm64, it mounts a Dev Drive at the checkout folder's parent, so the checkout, TEMP, TMP and npm's cache all go on it.
+  Elsewhere, and on a self-hosted runner, it does nothing.
+runs:
+  using: composite
+  steps:
+    - name: Move the checkout, npm's temporary files and its cache off the system disk
+      if: runner.os == 'Windows' && runner.environment == 'github-hosted'
+      shell: bash
+      working-directory: ${{ runner.temp }}
+      env:
+        MSYS_NO_PATHCONV: '1'
+      run: |
+        set -euo pipefail
+        if [ "$RUNNER_ARCH" = X64 ]; then
+          root="$RUNNER_TEMP"
+        else
+          root="${GITHUB_WORKSPACE%\\*}"
+          entries="$(ls -A "$root")"
+          if [ "$entries" != "${GITHUB_WORKSPACE##*\\}" ]; then
+            echo "The Dev Drive goes on $root, which holds more than the empty checkout folder: $entries"
+            exit 1
+          fi
+          rmdir "$GITHUB_WORKSPACE"
+          vhd="$RUNNER_TEMP\dev-drive.vhdx"
+          script="$RUNNER_TEMP\dev-drive.txt"
+          printf '%s\r\n' "create vdisk file=\"$vhd\" maximum=40960 type=expandable" "select vdisk file=\"$vhd\"" 'attach vdisk' 'convert gpt' 'create partition primary' 'assign letter=R' "assign mount=\"$root\"" > "$script"
+          diskpart /s "$script"
+          echo Y | format.com R: /DevDrv /Q /V:DevDrive /Y
+          fsutil devdrv query R:
+          printf '%s\r\n' 'select volume R' 'remove letter=R' > "$script"
+          diskpart /s "$script"
+          mkdir "$GITHUB_WORKSPACE"
+        fi
+        tmp="$root\tmp"
+        cache="$root\npm-cache"
+        mkdir -p "$tmp" "$cache"
+        printf '%s\n' "TEMP=$tmp" "TMP=$tmp" "npm_config_cache=$cache" >> "$GITHUB_ENV"
+        volume="${root:0:2}"
+        if [ "$RUNNER_ARCH" != X64 ]; then
+          volume="$root\\"
+        fi
+        for drive in C: "$volume"; do
+          echo "Free space on $drive:"
+          fsutil volume diskfree "$drive" || echo "The free space of $drive could not be read."
+        done
