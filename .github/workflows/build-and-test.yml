@@ -312,6 +312,10 @@ jobs:
       matrix:
         include: ${{ fromJSON(needs.plan.outputs.targets || needs.versions.outputs.targets) }}
     steps:
+      - &npm-off-system-disk
+        name: Move the checkout, npm's temporary files and its cache off the system disk
+        uses: noldova-com/.github/.github/actions/dev-drive@1756fd27cb075b59062bf43aa3ed2469dd9f9989
+
       - name: Check out the revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -322,29 +326,6 @@ jobs:
         with:
           node-version: ${{ needs.versions.outputs.node-version }}
           package-manager-cache: false
-
-      - &npm-off-system-disk
-        name: Move npm's temporary files and cache off the system disk
-        if: runner.os == 'Windows' && runner.environment == 'github-hosted'
-        env:
-          MSYS_NO_PATHCONV: '1'
-        run: |
-          set -euo pipefail
-          if [ "$RUNNER_ARCH" = X64 ]; then
-            root="$RUNNER_TEMP"
-          else
-            vhd="$RUNNER_TEMP\dev-drive.vhdx"
-            script="$RUNNER_TEMP\dev-drive.txt"
-            printf '%s\r\n' "create vdisk file=\"$vhd\" maximum=20480 type=expandable" "select vdisk file=\"$vhd\"" 'attach vdisk' 'convert gpt' 'create partition primary' 'assign letter=R' > "$script"
-            diskpart /s "$script"
-            echo Y | format.com R: /DevDrv /Q /V:DevDrive /Y
-            fsutil devdrv query R:
-            root='R:'
-          fi
-          tmp="$root\tmp"
-          cache="$root\npm-cache"
-          mkdir -p "$tmp" "$cache"
-          printf '%s\n' "TEMP=$tmp" "TMP=$tmp" "npm_config_cache=$cache" >> "$GITHUB_ENV"
 
       - &browser-folder
         name: Choose the folder and cache key of Playwright's browsers
@@ -499,6 +480,7 @@ jobs:
 
       - name: Report the temporary folder's drive after a failure
         if: failure() && runner.os == 'Windows' && runner.environment == 'github-hosted'
+        working-directory: ${{ runner.temp }}
         timeout-minutes: 2
         env:
           MSYS_NO_PATHCONV: '1'
@@ -528,6 +510,7 @@ jobs:
 
       - name: Report the temporary folder's volume and a write's Windows error after a failure
         if: failure() && runner.os == 'Windows' && runner.environment == 'github-hosted'
+        working-directory: ${{ runner.temp }}
         timeout-minutes: 1
         shell: pwsh
         run: |
@@ -645,6 +628,8 @@ jobs:
       - name: Note when the job started
         run: echo "JOB_STARTED=$(date +%s)" >> "$GITHUB_ENV"
 
+      - *npm-off-system-disk
+
       - name: Check out the revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -655,8 +640,6 @@ jobs:
         with:
           node-version: ${{ needs.versions.outputs.node-version }}
           package-manager-cache: false
-
-      - *npm-off-system-disk
 
       - *browser-folder
 
