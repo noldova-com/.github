@@ -314,7 +314,7 @@ jobs:
     steps:
       - &npm-off-system-disk
         name: Move the checkout, npm's temporary files and its cache off the system disk
-        uses: noldova-com/.github/.github/actions/dev-drive@1756fd27cb075b59062bf43aa3ed2469dd9f9989
+        uses: noldova-com/.github/.github/actions/dev-drive@e7a71ef2ae6f0bc439380daf5542d324f5c7488f
 
       - name: Check out the revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
