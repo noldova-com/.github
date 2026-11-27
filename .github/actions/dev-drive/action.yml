@@ -29,7 +29,7 @@ runs:
           script="$RUNNER_TEMP\dev-drive.txt"
           printf '%s\r\n' "create vdisk file=\"$vhd\" maximum=40960 type=expandable" "select vdisk file=\"$vhd\"" 'attach vdisk' 'convert gpt' 'create partition primary' 'assign letter=R' "assign mount=\"$root\"" > "$script"
           diskpart /s "$script"
-          echo Y | format.com R: /DevDrv /Q /V:DevDrive /Y
+          echo Y | format.com R: /FS:NTFS /Q /V:Probe /Y
           fsutil devdrv query R:
           printf '%s\r\n' 'select volume R' 'remove letter=R' > "$script"
           diskpart /s "$script"
