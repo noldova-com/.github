@@ -15,7 +15,7 @@ runs:
         MSYS_NO_PATHCONV: '1'
       run: |
         set -euo pipefail
-        if [ "$RUNNER_ARCH" = X64 ]; then
+        if [ "$RUNNER_ARCH" = none ]; then
           root="$RUNNER_TEMP"
         else
           root="${GITHUB_WORKSPACE%\\*}"
