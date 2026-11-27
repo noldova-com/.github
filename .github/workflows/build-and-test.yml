@@ -312,6 +312,37 @@ jobs:
       matrix:
         include: ${{ fromJSON(needs.plan.outputs.targets || needs.versions.outputs.targets) }}
     steps:
+      - &npm-off-system-disk
+        name: Move the checkout, npm's temporary files and its cache off the system disk
+        if: runner.os == 'Windows' && runner.environment == 'github-hosted'
+        working-directory: ${{ runner.temp }}
+        env:
+          MSYS_NO_PATHCONV: '1'
+        run: |
+          set -euo pipefail
+          if [ "$RUNNER_ARCH" = X64 ]; then
+            root="$RUNNER_TEMP"
+          else
+            root="${GITHUB_WORKSPACE%\\*}"
+            entries="$(ls -A "$root")"
+            if [ "$entries" != "${GITHUB_WORKSPACE##*\\}" ]; then
+              echo "The Dev Drive goes on $root, which holds more than the empty checkout folder: $entries"
+              exit 1
+            fi
+            rmdir "$GITHUB_WORKSPACE"
+            vhd="$RUNNER_TEMP\dev-drive.vhdx"
+            script="$RUNNER_TEMP\dev-drive.txt"
+            printf '%s\r\n' "create vdisk file=\"$vhd\" maximum=40960 type=expandable" "select vdisk file=\"$vhd\"" 'attach vdisk' 'convert gpt' 'create partition primary' "assign mount=\"$root\"" > "$script"
+            diskpart /s "$script"
+            echo Y | format.com "$root\\" /DevDrv /Q /V:DevDrive /Y
+            fsutil devdrv query "$root\\"
+            mkdir "$GITHUB_WORKSPACE"
+          fi
+          tmp="$root\tmp"
+          cache="$root\npm-cache"
+          mkdir -p "$tmp" "$cache"
+          printf '%s\n' "TEMP=$tmp" "TMP=$tmp" "npm_config_cache=$cache" >> "$GITHUB_ENV"
+
       - name: Check out the revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -322,29 +353,6 @@ jobs:
         with:
           node-version: ${{ needs.versions.outputs.node-version }}
           package-manager-cache: false
-
-      - &npm-off-system-disk
-        name: Move npm's temporary files and cache off the system disk
-        if: runner.os == 'Windows' && runner.environment == 'github-hosted'
-        env:
-          MSYS_NO_PATHCONV: '1'
-        run: |
-          set -euo pipefail
-          if [ "$RUNNER_ARCH" = X64 ]; then
-            root="$RUNNER_TEMP"
-          else
-            vhd="$RUNNER_TEMP\dev-drive.vhdx"
-            script="$RUNNER_TEMP\dev-drive.txt"
-            printf '%s\r\n' "create vdisk file=\"$vhd\" maximum=20480 type=expandable" "select vdisk file=\"$vhd\"" 'attach vdisk' 'convert gpt' 'create partition primary' 'assign letter=R' > "$script"
-            diskpart /s "$script"
-            echo Y | format.com R: /DevDrv /Q /V:DevDrive /Y
-            fsutil devdrv query R:
-            root='R:'
-          fi
-          tmp="$root\tmp"
-          cache="$root\npm-cache"
-          mkdir -p "$tmp" "$cache"
-          printf '%s\n' "TEMP=$tmp" "TMP=$tmp" "npm_config_cache=$cache" >> "$GITHUB_ENV"
 
       - &browser-folder
         name: Choose the folder and cache key of Playwright's browsers
@@ -645,6 +653,8 @@ jobs:
       - name: Note when the job started
         run: echo "JOB_STARTED=$(date +%s)" >> "$GITHUB_ENV"
 
+      - *npm-off-system-disk
+
       - name: Check out the revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -655,8 +665,6 @@ jobs:
         with:
           node-version: ${{ needs.versions.outputs.node-version }}
           package-manager-cache: false
-
-      - *npm-off-system-disk
 
       - *browser-folder
 
